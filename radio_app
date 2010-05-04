@@ -1,0 +1,282 @@
+#!/usr/bin/perl -w
+#get_radio V0.2
+#works in all meaningful ways
+#Allows multiple searches and channels for program downloading
+#Caches the XML for the AOD pages so that the file is only pulled once
+#Has a crude mechanism for identifying pids UNUSED
+#Matches a program based ona regex of the title or the PID
+#TODO:
+#Error trapping:
+#Spot when a media selector URL doesn't return data
+#Make sure the stream selection works
+#Resuming live recordings external loop or flvstreamer resume?
+#Reduce the reliance on external programs (Inotify? Could do others?)
+#Get cleverer about matching the live stream currently --live will turn off other methods
+#fix playing live of AoD
+
+# use module
+use strict;
+use Getopt::Long;
+use Date::Format;
+use Date::Parse;
+#use XML::Simple qw(:strict);
+use XML::Simple;
+use Data::Dumper;
+use HTTP::Request;
+use LWP::UserAgent;
+use IPC::Run qw( run start );
+
+# create object
+my $xml = new XML::Simple;
+
+#Some Vars
+#inoticoming doesn't work with a station name that starts with a number
+my %Channel = (
+		1  => [ "bbc_radio_one"       , "radio1"     , "Radio1" ],
+		2  => [ "bbc_radio_two"       , "radio2"     , "Radio2" ],
+		3  => [ "bbc_radio_three"     , "radio3"     , "Radio3" ],
+		4  => [ "bbc_radio_four"      , "radio4"     , "Radio4" ],
+		5  => [ "bbc_radio_five_live" , "fivelive"   , "R5live"  ],
+		6  => [ "bbc_6music"          , "6music"     , "R6music" ],
+		7  => [ "bbc_7"               , "bbc7"       , "BBC7" ],
+		10 => [ "bbc_radio_wales"     , "radiowales" , "RadioWales" ],
+		11 => [ "bbc_wm"              , "bbcwm"      , "RadioWM" ],
+);
+
+my @SelChn  = ();
+my @SelSer  = ();
+my $SelSin  = 350;
+my $DmpChn  = 0;
+my $OutDir  = "/home/paul/scratch/podcasts/misc";
+my $tmpdir = '/tmp';
+my $live    = 0;
+my $chunk   = 30;
+my $stop    = 180;
+my $play    = 0;
+my $get	    = 0;
+my $MaxPids  = 5;
+my $FlvPrt   = 1935;
+
+#These variables are pretty global??
+my (@flvcmd , @lamecmd ,@ffmpegcmd , @mp3spltcmd , @mplayercmd , @inoticmd , $PlayPath );
+#Set Common Params
+push ( @flvcmd     , ( '/usr/bin/flvstreamer' , '-q' ));
+push ( @ffmpegcmd  , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' ));
+push ( @mplayercmd , ( '/usr/bin/mplayer' , '-cache' , '8192' , '-' ));
+
+GetOptions (
+	'channel=s'	=> \@SelChn,
+	'find=s'	=> \@SelSer,
+	'since=i'	=> \$SelSin,
+	'outdir=s'	=> \$OutDir,
+	'get'		=> \$get,
+	'live'		=> \$live,
+	'chunk=i'	=> \$chunk,
+	'end=i'		=> \$stop,
+	'play'		=> \$play,
+	'help|dump'	=> \$DmpChn,
+) or die "Incorrect usage use --help for assistance.\n";
+
+if ( $DmpChn == 1 ) {
+	print "List of channels: \n";
+	foreach my $stn ( sort {$a <=> $b} ( keys %Channel )) {
+		print "$stn live pid: $Channel{$stn}[0], AOD XML: $Channel{$stn}[1], Pretty Output: $Channel{$stn}[2]\n";
+	}
+
+print "\nUsage: ARGV[0] --live --channel x --chunk y --end z --outdir <dir> [--play]\n";
+print "--live:    download the specified channel, chunk will
+           split the file every y mins, end, stop after z mins
+           (Requires flvstreamer, ffmpeg, lame and mp3splt)
+--play:    will play it (requires mplayer), chunk is ignored
+--channel: a single integer refers to bb channels. see --help for a list.\n";
+
+print "\nUsage: ARGV[0] [--get] --channel x[,y,z] --since n --outdir <dir> --find <string> [--find <string> --find <string>]\n";
+print "default:   search in specified channels for search string(s)
+--since:   will result in only searching for files available in the last n hours
+--get:     fetch the files (needs flvstreamer and ffmpeg)
+--channel: comma seperated list of channels to search (--help for list)
+--play:    attempt to play, does not seem to work (needs mplayer to not work)\n";
+exit;
+}
+sub isitaPID {
+	my $testpid = shift;
+	my $pidlth  = 8;
+	my $pidsrt  = 'b00';
+	if ( length($testpid) == $pidlth ) {
+		#print "DEBUG:: It might be a pid it's 8 chracters\n";
+		if ( $testpid =~ m/^$pidsrt/ ) {
+			#print "DEBUG:: It might be a pid it starts with $pidsrt\n";
+			return 1;
+		} else {
+			#print "DEBUG:: It not a PID";
+			return 0;
+		}
+	} else {
+		#print "DEBUG:: It not a PID\n";
+		return 0;
+	}
+}
+
+sub processMediaSelector {
+	my $SelBase = "http://www.bbc.co.uk/mediaselector/4/mtis/stream/";
+	my $MedPid = shift;
+	my @StrTyp = @_;
+	# read XML file
+	my $ua = LWP::UserAgent->new;
+	my $raw = $ua->request(HTTP::Request->new( GET => $SelBase . $MedPid ) );
+	my $data = $xml->XMLin($raw->content);
+	my $media_index = 0;
+	my $serv_index = 0;
+	until ( ( $data->{media}[$media_index]->{service} eq $StrTyp[$serv_index] ) or ( defined($data->{media}[$media_index]->{service}) == 0 ) ) {
+		$serv_index = 0;
+		until ( ( $data->{media}[$media_index]->{service} eq $StrTyp[$serv_index] ) or ( $serv_index >= $#StrTyp ) ) {
+               	++$serv_index;
+		}
+		if ( $data->{media}[$media_index]->{service} ne $StrTyp[$serv_index] ) {
+                	++$media_index;
+        	}
+	}
+	#print "DEBUG:: server should be $data->{media}[$media_index]->{connection}->{server}\n";
+	#Initialise hash ....
+	my %mattribs;
+	my $fcsraw  = $ua->request(HTTP::Request->new( GET => "http://" . $data->{media}[$media_index]->{connection}->{server} . "/fcs/ident" ) );
+	my $fcsdata = $xml->XMLin($fcsraw->content);
+	%mattribs = (
+		success    => 1,
+		authString => $data->{media}[$media_index]->{connection}->{authString},
+		identifier => $data->{media}[$media_index]->{connection}->{identifier},
+		encoding   => $data->{media}[$media_index]->{encoding},
+		server     => $data->{media}[$media_index]->{connection}->{server},
+		ip	   => $fcsdata->{ip},
+	);
+	return %mattribs;
+}
+	
+sub streamStation {
+	my $chan  = shift;
+	#print "DEBUG::channel $chan\n";
+	my $show  = $Channel{$chan}[0];
+	#print "DEBUG::show $show\n``";
+	my $title = $Channel{$chan}[2];
+	my @localtime = localtime(time);
+	my $filetime = strftime("%Y%m%d_%H%M", @localtime);
+	
+	#This locks it to the low bandwidth iplayer flash stream
+	my $stream = "iplayer_uk_stream_aac_rtmp_lo_live";
+	my %attribs = processMediaSelector ( $show , $stream );
+	if ( $stop != 0 ) {
+        	push ( @flvcmd , ( '--stop' , ( $stop * 60 ) ) );
+	}
+	push ( @flvcmd , ( '-r' , "rtmp://$attribs{ip}:$FlvPrt/live" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/live?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}?$attribs{authString}&aifp=v001" , '--live' , '--flv' , '-' ));
+	if ( $play == 1 ) {
+                run \@flvcmd , '|' , \@mplayercmd;
+        } else {
+                push ( @ffmpegcmd , ( '-i' , '-' , '-v' , '0' , '-vn' , '-f' , 'wav' , '-' ));
+                push ( @lamecmd , ( '/usr/bin/lame' , '--quiet' , '-a' , '-q', '7' , '--resample' , '44.1' , '-b' , '32' , '-' ));
+                push ( @mp3spltcmd , ( '/usr/bin/mp3splt' , '-q' , '-t' , "$chunk.0" , '-d' , "$tmpdir" , '-o' , "$filetime\_\@n\_$title" , '-' ));
+                push ( @inoticmd , ( '/usr/bin/inoticoming' , "$tmpdir" , '--chdir' , "$tmpdir" , '--suffix' , "$title.mp3" , 'mv' , '{}' , "$OutDir/." , ';' ));
+                my $start = start \@inoticmd;
+                run \@flvcmd , '|' , \@ffmpegcmd , '|' , \@lamecmd , '|' , \@mp3spltcmd;
+                #signal $start, "TERM";
+                #kill_kill $start;
+                #kill_kill $start, grace => 5;
+                #Ugly hack but prob no worse than using inoticoming in the first place
+                run ( '/usr/bin/killall' , 'inoticoming' );
+	}
+}
+
+sub downloadPID {
+	my @shows  = @_;
+	my @stream = ( "iplayer_uk_stream_mp3" , "iplayer_intl_stream_mp3");
+	#my @stream = ( "iplayer_uk_stream_mp3" );
+	#print Dumper (@shows);
+	my $show_index = 0;
+	my %attribs;
+	until ( $show_index == ($#shows+1) ) {
+		#make the title safe
+		my $title = $shows[$show_index][1];
+		$title =~ tr/a-zA-Z0-9/_/c;
+		$title = $title . '_' . $shows[$show_index][0];
+		my $stream_index = 0;
+		#print "DEBUG:: show pid $shows[$show_index][0] , stream id $stream[$stream_index]\n";
+		my %attribs = processMediaSelector ( $shows[$show_index][0] , @stream );
+		#Check if file exists and don't download if it does
+		if ( -e "$OutDir/$title.$attribs{encoding}" ) {
+			print "File $OutDir/$title.$attribs{encoding} Exists Do Not Download!!\n";
+		} else {
+			#print "will now download \n";
+        		push ( @flvcmd , ( '--resume' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/ondemand" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/ondemand?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}" ));
+			if ( $play == 1 ) {
+				push ( @flvcmd, '--flv' , '-' );
+                		run \@flvcmd , '|' , \@mplayercmd;
+			} else {
+				push ( @flvcmd, '--flv' , "$tmpdir/$title.$attribs{encoding}" );
+				run \@flvcmd;
+				#print Dumper(@flvcmd);
+				push ( @ffmpegcmd , ( '-i' , "$tmpdir/$title.$attribs{encoding}" , '-acodec' , 'copy' , "$OutDir/$title.$attribs{encoding}"  ));
+				#print Dumper(@ffmpegcmd);
+				run \@ffmpegcmd;
+                		unlink "$tmpdir/$title.$attribs{encoding}";
+			}
+		}
+		++$show_index;
+	}
+		
+}
+
+sub searchShow {
+	my @SelPid   = ();
+	my $AodBase  = "http://www.bbc.co.uk/radio/aod/availability/";
+	my $SelSuff  = ".xml";
+	my $search   = shift;
+	my $since    = shift;
+	my @channels = @_;
+	my $now      = time();
+	#isitaPID ($search);
+	foreach my $station ( @channels ) {
+		if (!defined($Channel{$station}[3])) {
+			# read XML file
+			my $ua = LWP::UserAgent->new;
+			my $raw = $ua->request(HTTP::Request->new( GET => $AodBase . $Channel{$station}[1] . $SelSuff ) );
+			#Push the XML out into the Channel hash, this saves exessive calls to the BBC website
+			$Channel{$station}[3] = $xml->XMLin($raw->content, ForceArray => 'entry' );
+		}
+		my $entry_index = 0;
+		my $data = \$Channel{$station}[3];
+		#print "DEBUG:: $$data->{entry}[$entry_index]->{broadcast}[0]->{version_pid}\n";
+		until ( defined($$data->{entry}[$entry_index]->{broadcast}[0]->{version_pid}) == 0 ) {
+			if (( $$data->{entry}[$entry_index]->{title}[0] =~ /$search/i ) || ( $$data->{entry}[$entry_index]->{broadcast}[0]->{version_pid} eq $search )) {
+				my $added = str2time($$data->{entry}[$entry_index]->{availability}[0]->{start});
+				if ( ( $added >= $now - ( $since * 3600 )) && ( $added <= $now )) {
+					my @TmpArray = ();
+					#print "DEBUG:: ( $$data->{entry}[$entry_index]->{title}[0] $$data->{entry}[$entry_index]->{broadcast}[0]->{version_pid}  $search \n";
+					@TmpArray = ($$data->{entry}[$entry_index]->{broadcast}[0]->{version_pid},$$data->{entry}[$entry_index]->{title}[0],$$data->{entry}[$entry_index]->{availability}[0]->{start},$Channel{$station}[2]);
+					push ( @SelPid, ( [@TmpArray] ) );
+				}
+			}
+			++$entry_index;
+		}
+	}
+	return @SelPid;
+}
+
+#Main Code starts here
+#Always convert the channel to an array (needs error checking)#
+#For a live stream only use the first one
+@SelChn = split(/,/,join(',',@SelChn));
+#If its live we can bypass the search part and jump straight to the streaming
+
+if ( $live == 1 ) {
+	streamStation ( $SelChn[0] );
+} else {
+	my @Results = ();
+	foreach my $look (@SelSer) {
+		push ( @Results  , (searchShow ( $look , $SelSin , @SelChn )));
+	}
+		if ( $get == 1 ) {
+			#print "calling downloadPID \n";
+			downloadPID (@Results);
+		} else {
+			print Dumper (@Results);
+		}
+}

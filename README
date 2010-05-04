@@ -1,0 +1,36 @@
+radio_app README
+
+A small app to download radio programs from the BBC iPlayer, using flvstreamer.
+
+Dependencies:
+
+Perl:
+IPC::Run
+
+To stream and listen to a radio station, flvstreamer, mplayer
+
+To stream and record a radio station, flvstreamer, ffmpeg, lame, mp3splt, inoticoming
+
+To download a radio program flvstreamer, ffmpeg
+
+Usage examples:
+
+To list available channels
+
+./radio_app --list
+
+To download a live stream
+
+./radio_app --channel 5 --end 30 --chunk 5 --live --outdir $HOME
+
+To play a live stream
+
+./radio_app --channel 6 --live --play
+
+To search for a program
+
+/radio_app --channel 5 --find bacon --find "day sunday"
+
+To get all results:
+
+/radio_app --channel 5 --find bacon --find "day sunday" --get --outdir $HOME
