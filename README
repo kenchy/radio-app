@@ -18,6 +18,7 @@ Usage examples:
 To list available channels
 
 ./radio_app --list
+(the list is embedded into the program, it does not fetch a list, should be possible to add more if needed)
 
 To download a live stream
 
