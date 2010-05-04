@@ -17,7 +17,7 @@ Usage examples:
 
 To list available channels
 
-./radio_app --list
+./radio_app --help
 (the list is embedded into the program, it does not fetch a list, should be possible to add more if needed)
 
 To download a live stream
@@ -30,8 +30,14 @@ To play a live stream
 
 To search for a program
 
-/radio_app --channel 5 --find bacon --find "day sunday"
+./radio_app --channel 5 --find bacon --find "day sunday"
+
+To search for a program added in the last 24hrs
+
+./radio_app --channel 5 --find bacon --find "day sunday" --since 24
+
+(Can also search by PID b00.., but this needs to be an exact match)
 
 To get all results:
 
-/radio_app --channel 5 --find bacon --find "day sunday" --get --outdir $HOME
+./radio_app --channel 5 --find bacon --find "day sunday" --get --outdir $HOME

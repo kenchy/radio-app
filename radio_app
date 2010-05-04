@@ -1,18 +1,20 @@
 #!/usr/bin/perl -w
-#get_radio V0.2
+#get_radio V0.3
 #works in all meaningful ways
 #Allows multiple searches and channels for program downloading
 #Caches the XML for the AOD pages so that the file is only pulled once
 #Has a crude mechanism for identifying pids UNUSED
-#Matches a program based ona regex of the title or the PID
+#Matches a program based on a regex of the title or the PID
+#0.3 preliminary attempt to remove reliance on mp3splt and inoticoming
+#whether it works or not depends on how quickly you can get back downloading.
 #TODO:
 #Error trapping:
 #Spot when a media selector URL doesn't return data
 #Make sure the stream selection works
 #Resuming live recordings external loop or flvstreamer resume?
-#Reduce the reliance on external programs (Inotify? Could do others?)
 #Get cleverer about matching the live stream currently --live will turn off other methods
 #fix playing live of AoD
+
 
 # use module
 use strict;
@@ -25,6 +27,7 @@ use Data::Dumper;
 use HTTP::Request;
 use LWP::UserAgent;
 use IPC::Run qw( run start );
+use File::Copy;
 
 # create object
 my $xml = new XML::Simple;
@@ -164,24 +167,31 @@ sub streamStation {
 	#This locks it to the low bandwidth iplayer flash stream
 	my $stream = "iplayer_uk_stream_aac_rtmp_lo_live";
 	my %attribs = processMediaSelector ( $show , $stream );
-	if ( $stop != 0 ) {
-        	push ( @flvcmd , ( '--stop' , ( $stop * 60 ) ) );
+	if  ( $chunk !=0 ) {
+        		push ( @flvcmd , ( '--stop' , ( $chunk * 60 ) ) );
+	} elsif ( $stop !=0 ) {
+        		push ( @flvcmd , ( '--stop' , ( $stop * 60 ) ) );
 	}
+	#this command may need to be in the loop, I think the auth will fail after a period.....
 	push ( @flvcmd , ( '-r' , "rtmp://$attribs{ip}:$FlvPrt/live" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/live?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}?$attribs{authString}&aifp=v001" , '--live' , '--flv' , '-' ));
 	if ( $play == 1 ) {
                 run \@flvcmd , '|' , \@mplayercmd;
         } else {
                 push ( @ffmpegcmd , ( '-i' , '-' , '-v' , '0' , '-vn' , '-f' , 'wav' , '-' ));
-                push ( @lamecmd , ( '/usr/bin/lame' , '--quiet' , '-a' , '-q', '7' , '--resample' , '44.1' , '-b' , '32' , '-' ));
-                push ( @mp3spltcmd , ( '/usr/bin/mp3splt' , '-q' , '-t' , "$chunk.0" , '-d' , "$tmpdir" , '-o' , "$filetime\_\@n\_$title" , '-' ));
-                push ( @inoticmd , ( '/usr/bin/inoticoming' , "$tmpdir" , '--chdir' , "$tmpdir" , '--suffix' , "$title.mp3" , 'mv' , '{}' , "$OutDir/." , ';' ));
-                my $start = start \@inoticmd;
-                run \@flvcmd , '|' , \@ffmpegcmd , '|' , \@lamecmd , '|' , \@mp3spltcmd;
-                #signal $start, "TERM";
-                #kill_kill $start;
-                #kill_kill $start, grace => 5;
-                #Ugly hack but prob no worse than using inoticoming in the first place
-                run ( '/usr/bin/killall' , 'inoticoming' );
+		my $runtot = 1;
+		
+		while ( ($runtot * $chunk) < $stop ) {
+			@lamecmd = ();
+			$filename = $filetime\_$runtot\_$title;
+                	push ( @lamecmd , ( '/usr/bin/lame' , '--quiet' , '-a' , '-q', '7' , '--resample' , '44.1' , '-b' , '32' , "$tmpdir/$filename" ));
+        	        run \@flvcmd , '|' , \@ffmpegcmd , '|' , \@lamecmd;
+			move ( "$tmpdir/$filename","$OutDir/$filename");
+			if ( $chunk != 0 ) {
+				$runtot = ++$runtot;
+			} else {
+				$runtot = $stop;
+			}
+		}
 	}
 }
 
