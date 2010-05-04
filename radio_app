@@ -180,10 +180,13 @@ sub streamStation {
                 push ( @ffmpegcmd , ( '-i' , '-' , '-v' , '0' , '-vn' , '-f' , 'wav' , '-' ));
 		my $runtot = 1;
 		
-		while ( ($runtot * $chunk) < $stop ) {
+		while ( (($runtot - 1) * $chunk) < $stop ) {
 			@lamecmd = ();
-			$filename = $filetime\_$runtot\_$title;
-                	push ( @lamecmd , ( '/usr/bin/lame' , '--quiet' , '-a' , '-q', '7' , '--resample' , '44.1' , '-b' , '32' , "$tmpdir/$filename" ));
+			my $filename = "$filetime\_$runtot\_$title.mp3";
+                	push ( @lamecmd , ( '/usr/bin/lame' , '--quiet' , '-a' , '-q', '7' , '--resample' , '44.1' , '-b' , '32' , '-' , "$tmpdir/$filename" ));
+			print Dumper (@flvcmd);
+			print Dumper (@ffmpegcmd);
+			print Dumper (@lamecmd);
         	        run \@flvcmd , '|' , \@ffmpegcmd , '|' , \@lamecmd;
 			move ( "$tmpdir/$filename","$OutDir/$filename");
 			if ( $chunk != 0 ) {
