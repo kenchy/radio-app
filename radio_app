@@ -1,12 +1,10 @@
 #!/usr/bin/perl -w
-#get_radio V0.3
+#get_radio V0.4
 #works in all meaningful ways
 #Allows multiple searches and channels for program downloading
 #Caches the XML for the AOD pages so that the file is only pulled once
 #Has a crude mechanism for identifying pids UNUSED
 #Matches a program based on a regex of the title or the PID
-#0.3 preliminary attempt to remove reliance on mp3splt and inoticoming
-#whether it works or not depends on how quickly you can get back downloading.
 #TODO:
 #Error trapping:
 #Spot when a media selector URL doesn't return data
@@ -17,7 +15,7 @@
 
 
 # use module
-use strict;
+#use strict;
 use Getopt::Long;
 use Date::Format;
 use Date::Parse;
@@ -106,7 +104,7 @@ sub isitaPID {
 	my $pidlth  = 8;
 	my $pidsrt  = 'b00';
 	if ( length($testpid) == $pidlth ) {
-		#print "DEBUG:: It might be a pid it's 8 chracters\n";
+		#print "DEBUG:: It might be a pid it's 8 characters\n";
 		if ( $testpid =~ m/^$pidsrt/ ) {
 			#print "DEBUG:: It might be a pid it starts with $pidsrt\n";
 			return 1;
@@ -167,33 +165,44 @@ sub streamStation {
 	#This locks it to the low bandwidth iplayer flash stream
 	my $stream = "iplayer_uk_stream_aac_rtmp_lo_live";
 	my %attribs = processMediaSelector ( $show , $stream );
-	if  ( $chunk !=0 ) {
-        		push ( @flvcmd , ( '--stop' , ( $chunk * 60 ) ) );
-	} elsif ( $stop !=0 ) {
-        		push ( @flvcmd , ( '--stop' , ( $stop * 60 ) ) );
-	}
 	#this command may need to be in the loop, I think the auth will fail after a period.....
 	push ( @flvcmd , ( '-r' , "rtmp://$attribs{ip}:$FlvPrt/live" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/live?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}?$attribs{authString}&aifp=v001" , '--live' , '--flv' , '-' ));
 	if ( $play == 1 ) {
+		if ( $stop != 0 ) {
+				$stop = ($stop * 60);
+        			push ( @flvcmd , ( '--stop' , "$stop" ) );
+		}
                 run \@flvcmd , '|' , \@mplayercmd;
         } else {
                 push ( @ffmpegcmd , ( '-i' , '-' , '-v' , '0' , '-vn' , '-f' , 'wav' , '-' ));
-		my $runtot = 1;
-		
-		while ( (($runtot - 1) * $chunk) < $stop ) {
-			@lamecmd = ();
-			my $filename = "$filetime\_$runtot\_$title.mp3";
-                	push ( @lamecmd , ( '/usr/bin/lame' , '--quiet' , '-a' , '-q', '7' , '--resample' , '44.1' , '-b' , '32' , '-' , "$tmpdir/$filename" ));
-			print Dumper (@flvcmd);
-			print Dumper (@ffmpegcmd);
-			print Dumper (@lamecmd);
+		my $counter = 1;
+		my $runtot = 0;
+                push ( @lamecmd , ( '/usr/bin/lame' , '--quiet' , '-a' , '-q', '7' , '--resample' , '44.1' , '-b' , '32' , '-' , "dummyname" ));
+		if ( $stop != 0 ) {
+			$stop = $stop * 60;
+			$chunk = $chunk * 60;
+			#push the default chunk length onto the end
+        		push ( @flvcmd , ( '--stop' , "$chunk"  ) );
+		} else {
+			#If they haven't specified a stop stop after 4hrs with no chunks
+			$stop = 14400;
+			$chunk = 14400;
+		}
+		while ( $runtot < $stop ) {
+			my $filename = "$filetime\_$counter\_$title.mp3";
+			if ( ($stop - $runtot) < $chunk ) {
+				$chunk = $stop - $runtot;
+				pop ( @flvcmd );
+        			push ( @flvcmd , "$chunk"  );
+			}
+			pop ( @lamecmd );
+			push ( @lamecmd , ( "$tmpdir/$filename" ));
         	        run \@flvcmd , '|' , \@ffmpegcmd , '|' , \@lamecmd;
 			move ( "$tmpdir/$filename","$OutDir/$filename");
-			if ( $chunk != 0 ) {
-				$runtot = ++$runtot;
-			} else {
-				$runtot = $stop;
-			}
+
+			$runtot = $runtot + $chunk;
+				
+			$counter = ++$counter;
 		}
 	}
 }
