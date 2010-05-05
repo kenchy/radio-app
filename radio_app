@@ -48,7 +48,7 @@ my @SelChn  = ();
 my @SelSer  = ();
 my $SelSin  = 350;
 my $DmpChn  = 0;
-my $OutDir  = "/home/paul/scratch/podcasts/misc";
+my $OutDir  = $ENV{HOME} || (getpwuid($<))[7] || '/tmp' ;
 my $tmpdir = '/tmp';
 my $live    = 0;
 my $chunk   = 30;
@@ -77,6 +77,8 @@ GetOptions (
 	'play'		=> \$play,
 	'help|dump'	=> \$DmpChn,
 ) or die "Incorrect usage use --help for assistance.\n";
+
+#print "DEBUG:: $OutDir\n";
 
 if ( $DmpChn == 1 ) {
 	print "List of channels: \n";
