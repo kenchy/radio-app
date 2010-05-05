@@ -15,7 +15,7 @@
 
 
 # use module
-#use strict;
+use strict;
 use Getopt::Long;
 use Date::Format;
 use Date::Parse;
