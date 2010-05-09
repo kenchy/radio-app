@@ -22,6 +22,7 @@ use Date::Parse;
 #use XML::Simple qw(:strict);
 use XML::Simple;
 use Data::Dumper;
+use Switch;
 use HTTP::Request;
 use LWP::UserAgent;
 use IPC::Run qw( run start );
@@ -49,14 +50,20 @@ my @SelSer  = ();
 my $SelSin  = 350;
 my $DmpChn  = 0;
 my $OutDir  = $ENV{HOME} || (getpwuid($<))[7] || '/tmp' ;
-my $tmpdir = '/tmp';
+my $tmpdir  = '/tmp';
 my $live    = 0;
 my $chunk   = 30;
 my $stop    = 180;
 my $play    = 0;
 my $get	    = 0;
-my $MaxPids  = 5;
-my $FlvPrt   = 1935;
+my $MaxPids = 5;
+my $FlvPrt  = 1935;
+my $Gui     = 0;
+
+my $true = 1;
+my $false = 0;
+my $vol_label;
+my $mute_label;
 
 #These variables are pretty global??
 my (@flvcmd , @lamecmd ,@ffmpegcmd , @mp3spltcmd , @mplayercmd , @inoticmd , $PlayPath );
@@ -75,6 +82,7 @@ GetOptions (
 	'chunk=i'	=> \$chunk,
 	'end=i'		=> \$stop,
 	'play'		=> \$play,
+	'gui'		=> \$Gui,
 	'help|dump'	=> \$DmpChn,
 ) or die "Incorrect usage use --help for assistance.\n";
 
@@ -284,13 +292,211 @@ sub searchShow {
 	return @SelPid;
 }
 
+sub getvol {
+	my $out;
+	my @amcmd = ('/usr/bin/amixer' , 'get' , 'Master' );
+	my @grcmd = ( '/bin/grep' , 'Front Left:' );
+	run ( \@amcmd , '|' , \@grcmd , '>' , \$out ); 
+	my @vol_array = split ( / +/ , $out );
+	#print Dumper ( @vol_array );
+	$vol_label->set_label("Current Volume: ". $vol_array[4]);
+	if ( $vol_array[7] eq '[on]' ) {
+		$mute_label->set_label("Mute Off");
+		return ($vol_array[4] , $true);
+	} else {
+		$mute_label->set_label("Mute On");
+		return ($vol_array[4] , $false);
+	}
+}
+
+
+sub volume {
+	shift;
+	print Dumper ( @_ );
+	my $action = shift;
+	my @vol_state = getvol;
+
+	print "DEBUG:: action $action";
+	my @amcmd = ('/usr/bin/amixer' , '-q' , 'cset' );
+
+	switch ($action) {
+
+		case "mute" {
+			if ($vol_state[1] == $true) {
+				print "unmute";
+				#amixer -q cset iface=MIXER,name="Master Playback Switch" on
+			} else {
+				print "mute";
+				#amixer -q cset iface=MIXER,name="Master Playback Switch" off
+			}
+		}
+	
+		case "up" {
+			print "vol up $vol_state[0]\n";
+			push (@amcmd , ( 'iface=MIXER,name="Master Playback Volume"' , ++$vol_state[0] ));
+			run \@amcmd;
+			#amixer cset iface=MIXER,name="Master Playback Volume" $newvol
+		}
+		case "down" {
+			print "vol down $vol_state[0]\n";
+			push (@amcmd , ( 'iface=MIXER,name="Master Playback Volume"' , --$vol_state[0] ));
+			run \@amcmd;
+			#amixer cset iface=MIXER,name="Master Playback Volume" $newvol
+		}
+	}	
+
+}
+
+sub refresh_status {
+
+getvol;
+
+}
+sub startGui {
+
+use Glib;
+use Gtk2 -init;
+#use Gtk2::Ex::Simple::List;
+use Gtk2::SimpleList;
+
+
+# Create the window
+my $base_win = new Gtk2::Window( "toplevel" );
+$base_win->set_title( "RadioControl" );
+$base_win->signal_connect( "destroy", sub { Gtk2->main_quit; });
+$base_win->set_border_width( 10 );
+
+# Create the main vertical box.
+my $base_vbox = new Gtk2::VBox( $false, $false );
+$base_win->add( $base_vbox );
+
+# Create a horizontal frame
+my $base_frame = new Gtk2::Frame( "JoggControl" );
+$base_vbox->pack_start( $base_frame, $true, $true, 10 );
+
+my $sub_hbox = new Gtk2::HBox( $false, $false );
+$base_vbox->pack_start( $sub_hbox, $true, $true, 10 );
+
+	my $hbbox = new Gtk2::HButtonBox();
+	$hbbox->set_border_width( 5 );
+	$hbbox->set_layout( "spread" );
+	$hbbox->set_spacing( 30 );
+
+	my $ss_button = new Gtk2::Button( "Start SlideShow" );
+	$ss_button->signal_connect('clicked' => \&start_slideshow );
+	$hbbox->add( $ss_button );
+
+	my $volup_button = new Gtk2::Button( "Vol Up" );
+	$volup_button->signal_connect('clicked' => \&volume , "up" );
+	$hbbox->add( $volup_button );
+
+	my $voldn_button = new Gtk2::Button( "Vol Dn" );
+	$voldn_button->signal_connect('clicked' => \&volume , "down" );
+	$hbbox->add( $voldn_button );
+
+	my $mute_button = new Gtk2::Button( "Mute" );
+	$mute_button->signal_connect('clicked' => \&volume , "mute" );
+	$hbbox->add( $mute_button );
+
+	my $exit_button = new Gtk2::Button( "Exit" );
+	$exit_button->signal_connect('clicked' => sub { $base_win->destroy });
+	$hbbox->add( $exit_button );
+
+	$base_frame->add( $hbbox );
+
+
+
+	my $left_vframe = new Gtk2::Frame( "Radio Select" );
+	my $mid_vframe = new Gtk2::Frame( "Radio Control" );
+	my $right_vframe = new Gtk2::Frame( "Status and Info" );
+
+	$sub_hbox->pack_start($left_vframe, $true, $true, 10);
+	$sub_hbox->pack_start($mid_vframe, $true, $true, 10);
+	$sub_hbox->pack_start($right_vframe, $true, $true, 10);
+
+	my $mid_vbbox = new Gtk2::VButtonBox();
+	$mid_vbbox->set_border_width( 5 );
+	$mid_vframe->add( $mid_vbbox );
+	#$mid_vbbox->set_layout( "spread" );
+	$mid_vbbox->set_spacing( 30 );
+
+	my $radio_button = new Gtk2::Button( "Start Radio" );
+	$radio_button->signal_connect('clicked' => \&start_radio );
+	$mid_vbbox->add( $radio_button );
+
+	my $stn_label = new Gtk2::Label ( "Station to Play:" );
+	$mid_vbbox->add( $stn_label );
+	my $stn_seltd = new Gtk2::Label ( "Please Select a Station" );
+	$mid_vbbox->add( $stn_seltd );
+
+	my $selstn_button = new Gtk2::Button( "Select File" );
+	$selstn_button->signal_connect('clicked' => \&select_station );
+	$mid_vbbox->add( $selstn_button );
+
+	my $left_vbox = new Gtk2::VBox( $false, $false );
+	$left_vframe->add ($left_vbox);
+	my $stn_slist = Gtk2::SimpleList->new  (
+		'Station' => 'text',
+		'XML'	  => 'text',
+		'Name'	  => 'text',
+        );
+        #@{$stn_slist->{data}} = %Channel;
+	foreach my $stn ( sort {$a <=> $b} ( keys %Channel )) {
+		push  (@{$stn_slist->{data}} , ( [$Channel{$stn}[0], $Channel{$stn}[1], $Channel{$stn}[2]] ));
+	}
+	#$stn_slist->remove_column ($stn_slist->get_column (0));
+	#$stn_slist->remove_column ($stn_slist->get_column (0));
+        $left_vbox->pack_start($stn_slist, $true, $true, 10 );
+
+        $stn_slist->get_selection->signal_connect ( changed => sub {
+                my ($selection) = @_;
+                my $stn_slist = $selection->get_tree_view;
+                my ($sel) = $stn_slist->get_selected_indices;
+                my $tiedlist = $stn_slist->{data}[$sel][1];
+
+                #print Dumper $tiedlist;
+		$stn_seltd->set_label($tiedlist);
+
+        });
+
+	my $choose_button = Gtk2::FileChooserButton->new('Select Mp3' , 'open' );
+        $left_vbox->pack_start($choose_button, $true, $true, 10 );
+
+	my $right_vbbox = new Gtk2::VButtonBox();
+	$right_vbbox->set_border_width( 5 );
+	$right_vframe->add( $right_vbbox );
+	#$right_vbbox->set_layout( "spread" );
+	$right_vbbox->set_spacing( 30 );
+	$vol_label = new Gtk2::Label ( "Current Volume: ??" );
+	$right_vbbox->add( $vol_label );
+	$mute_label = new Gtk2::Label ( "mute?" );
+	$right_vbbox->add( $mute_label );
+	my $ip_label = new Gtk2::Label ( "IP Address:" );
+	$right_vbbox->add( $ip_label );
+	my $ip_addr = new Gtk2::Label ( "IP Address" );
+	$right_vbbox->add( $ip_addr );
+
+	my $refresh_button = new Gtk2::Button( "_Refresh" );
+	$refresh_button->signal_connect('clicked' => \&refresh_status );
+	$right_vbbox->add( $refresh_button );
+
+	$base_win->show_all;
+	Gtk2->main;
+
+}
+
+
 #Main Code starts here
 #Always convert the channel to an array (needs error checking)#
 #For a live stream only use the first one
 @SelChn = split(/,/,join(',',@SelChn));
 #If its live we can bypass the search part and jump straight to the streaming
 
-if ( $live == 1 ) {
+if ( $Gui  == 1 ) {
+
+    startGui
+
+} elsif ( $live == 1 ) {
 	streamStation ( $SelChn[0] );
 } else {
 	my @Results = ();
