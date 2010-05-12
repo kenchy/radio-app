@@ -64,6 +64,7 @@ my $true = 1;
 my $false = 0;
 my $vol_label;
 my $mute_label;
+my $stn_play = "fivelive";
 
 #These variables are pretty global??
 my (@flvcmd , @lamecmd ,@ffmpegcmd , @mp3spltcmd , @mplayercmd , @inoticmd , $PlayPath );
@@ -300,7 +301,7 @@ sub getvol {
 	my @vol_array = split ( / +/ , $out );
 	#print Dumper ( @vol_array );
 	$vol_label->set_label("Current Volume: ". $vol_array[4]);
-	if ( $vol_array[7] eq '[on]' ) {
+	if ( $vol_array[7]  =~ m/on/ ) {
 		$mute_label->set_label("Mute Off");
 		return ($vol_array[4] , $true);
 	} else {
@@ -322,29 +323,39 @@ sub volume {
 	switch ($action) {
 
 		case "mute" {
-			if ($vol_state[1] == $true) {
-				print "unmute";
-				#amixer -q cset iface=MIXER,name="Master Playback Switch" on
-			} else {
-				print "mute";
-				#amixer -q cset iface=MIXER,name="Master Playback Switch" off
-			}
+			 if ($vol_state[1] == $true) {
+                                #print "unmute";
+                                system ('/usr/bin/amixer -q cset iface=MIXER,name="Master Playback Switch" off');
+                        } else {
+                                #print "mute";
+                                system ('/usr/bin/amixer -q cset iface=MIXER,name="Master Playback Switch" on');
+                        }
 		}
 	
 		case "up" {
-			print "vol up $vol_state[0]\n";
-			push (@amcmd , ( 'iface=MIXER,name="Master Playback Volume"' , ++$vol_state[0] ));
-			run \@amcmd;
-			#amixer cset iface=MIXER,name="Master Playback Volume" $newvol
+			#print "vol up $vol_state[0]\n";
+			system ( '/usr/bin/amixer -q cset iface=MIXER,name="Master Playback Volume" '.++$vol_state[0] );
 		}
 		case "down" {
-			print "vol down $vol_state[0]\n";
-			push (@amcmd , ( 'iface=MIXER,name="Master Playback Volume"' , --$vol_state[0] ));
-			run \@amcmd;
-			#amixer cset iface=MIXER,name="Master Playback Volume" $newvol
+			#print "vol down $vol_state[0]\n";
+			system ( '/usr/bin/amixer -q cset iface=MIXER,name="Master Playback Volume" '.--$vol_state[0] );
 		}
 	}	
+	getvol;
+}
 
+sub  ip_addr {
+	my $interface;
+	my %IPs;
+
+	foreach ( qx{ (LC_ALL=C /sbin/ifconfig -a 2>&1) } ) {
+        	$interface = $1 if /^(\S+?):?\s/;
+        	next unless defined $interface;
+        	$IPs{$interface}->{STATE}=uc($1) if /\b(up|down)\b/i;
+        	$IPs{$interface}->{IP}=$1 if /inet\D+(\d+\.\d+\.\d+\.\d+)/i;
+	}
+
+	print Dumper(\%IPs);
 }
 
 sub refresh_status {
@@ -421,7 +432,7 @@ $base_vbox->pack_start( $sub_hbox, $true, $true, 10 );
 	$mid_vbbox->set_spacing( 30 );
 
 	my $radio_button = new Gtk2::Button( "Start Radio" );
-	$radio_button->signal_connect('clicked' => \&start_radio );
+	$radio_button->signal_connect('clicked' => \&streamStation , $stn_play );
 	$mid_vbbox->add( $radio_button );
 
 	my $stn_label = new Gtk2::Label ( "Station to Play:" );
@@ -452,10 +463,10 @@ $base_vbox->pack_start( $sub_hbox, $true, $true, 10 );
                 my ($selection) = @_;
                 my $stn_slist = $selection->get_tree_view;
                 my ($sel) = $stn_slist->get_selected_indices;
-                my $tiedlist = $stn_slist->{data}[$sel][1];
+                $stn_play = $stn_slist->{data}[$sel][1];
 
                 #print Dumper $tiedlist;
-		$stn_seltd->set_label($tiedlist);
+		$stn_seltd->set_label($stn_play);
 
         });
 
