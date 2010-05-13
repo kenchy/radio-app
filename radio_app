@@ -27,6 +27,9 @@ use HTTP::Request;
 use LWP::UserAgent;
 use IPC::Run qw( run start );
 use File::Copy;
+use if defined $ENV{DISPLAY} , "Gtk2";
+#use Gtk2::Ex::Simple::List;
+use if defined $ENV{DISPLAY} ,  "Gtk2::SimpleList";
 
 # create object
 my $xml = new XML::Simple;
@@ -369,10 +372,7 @@ getvol;
 }
 sub startGui {
 
-#use Glib;
-use if defined $ENV{DISPLAY} , "Gtk2 -init";
-#use Gtk2::Ex::Simple::List;
-use if defined $ENV{DISPLAY} ,  "Gtk2::SimpleList";
+Gtk2->init;
 
 # Create the window
 my $base_win = new Gtk2::Window( "toplevel" );
