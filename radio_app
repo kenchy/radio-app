@@ -45,26 +45,27 @@ my %Channel = (
 		11 => [ "bbc_wm"              , "bbcwm"      , "RadioWM" ],
 );
 
-my @SelChn  = ();
-my @SelSer  = ();
-my $SelSin  = 350;
-my $DmpChn  = 0;
-my $OutDir  = $ENV{HOME} || (getpwuid($<))[7] || '/tmp' ;
-my $tmpdir  = '/tmp';
-my $live    = 0;
-my $chunk   = 30;
-my $stop    = 180;
-my $play    = 0;
-my $get	    = 0;
-my $MaxPids = 5;
-my $FlvPrt  = 1935;
-my $Gui     = 0;
+my @SelChn   = ();
+my @SelSer   = ();
+my $SelSin   = 350;
+my $DmpChn   = 0;
+my $OutDir   = $ENV{HOME} || (getpwuid($<))[7] || '/tmp' ;
+my $tmpdir   = '/tmp';
+my $live     = 0;
+my $chunk    = 30;
+my $stop     = 180;
+my $play     = 0;
+my $get	     = 0;
+my $MaxPids  = 5;
+my $FlvPrt   = 1935;
+my $Gui      = 0;
 
-my $true = 1;
-my $false = 0;
+my $true     = 1;
+my $false    = 0;
 my $vol_label;
 my $mute_label;
 my $stn_play = "fivelive";
+my $process  = 0;
 
 #These variables are pretty global??
 my (@flvcmd , @lamecmd ,@ffmpegcmd , @mp3spltcmd , @mplayercmd , @inoticmd , $PlayPath );
@@ -209,8 +210,11 @@ sub streamStation {
 			pop ( @lamecmd );
 			push ( @lamecmd , ( "$tmpdir/$filename" ));
         	        run \@flvcmd , '|' , \@ffmpegcmd , '|' , \@lamecmd;
-			move ( "$tmpdir/$filename","$OutDir/$filename");
-
+			my @mvcmd = ( '/bin/mv' , "$tmpdir/$filename" , "$OutDir/$filename" );
+                        if ( $process != 0 ) {
+                                finish $process;
+                        }
+                        $process = start \@mvcmd;
 			$runtot = $runtot + $chunk;
 				
 			$counter = ++$counter;
@@ -365,11 +369,10 @@ getvol;
 }
 sub startGui {
 
-use Glib;
-use Gtk2 -init;
+#use Glib;
+use if defined $ENV{DISPLAY} , "Gtk2 -init";
 #use Gtk2::Ex::Simple::List;
-use Gtk2::SimpleList;
-
+use if defined $ENV{DISPLAY} ,  "Gtk2::SimpleList";
 
 # Create the window
 my $base_win = new Gtk2::Window( "toplevel" );
@@ -504,6 +507,7 @@ $base_vbox->pack_start( $sub_hbox, $true, $true, 10 );
 #If its live we can bypass the search part and jump straight to the streaming
 
 if ( $Gui  == 1 ) {
+	print ("load gui");
 
     startGui
 
