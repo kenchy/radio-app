@@ -29,7 +29,7 @@ use IPC::Run qw( run start );
 use File::Copy;
 use if defined $ENV{DISPLAY} , "Gtk2";
 #use Gtk2::Ex::Simple::List;
-use if defined $ENV{DISPLAY} ,  "Gtk2::SimpleList";
+use if defined $ENV{DISPLAY} , "Gtk2::SimpleList";
 
 # create object
 my $xml = new XML::Simple;
@@ -37,45 +37,51 @@ my $xml = new XML::Simple;
 #Some Vars
 #inoticoming doesn't work with a station name that starts with a number
 my %Channel = (
-		1  => [ "bbc_radio_one"       , "radio1"     , "Radio1" ],
-		2  => [ "bbc_radio_two"       , "radio2"     , "Radio2" ],
-		3  => [ "bbc_radio_three"     , "radio3"     , "Radio3" ],
-		4  => [ "bbc_radio_four"      , "radio4"     , "Radio4" ],
-		5  => [ "bbc_radio_five_live" , "fivelive"   , "R5live"  ],
+		1  => [ "bbc_radio_one"       , "radio1"     , "Radio 1" ],
+		2  => [ "bbc_radio_two"       , "radio2"     , "Radio 2" ],
+		3  => [ "bbc_radio_three"     , "radio3"     , "Radio 3" ],
+		4  => [ "bbc_radio_fourfm"    , "radio4"     , "Radio 4" ],
+		5  => [ "bbc_radio_five_live" , "fivelive"   , "R5 live"  ],
 		6  => [ "bbc_6music"          , "6music"     , "R6music" ],
-		7  => [ "bbc_7"               , "bbc7"       , "BBC7" ],
-		10 => [ "bbc_radio_wales"     , "radiowales" , "RadioWales" ],
-		11 => [ "bbc_wm"              , "bbcwm"      , "RadioWM" ],
+		7  => [ "bbc_7"               , "bbc7"       , "BBC 7  " ],
+		10 => [ "bbc_radio_wales_fm"  , "radiowales" , "R.Wales" ],
+		11 => [ "bbc_wm"              , "bbc_wm"     , "RadioWM" ],
 );
 
-my @SelChn   = ();
-my @SelSer   = ();
-my $SelSin   = 350;
-my $DmpChn   = 0;
-my $OutDir   = $ENV{HOME} || (getpwuid($<))[7] || '/tmp' ;
-my $tmpdir   = '/tmp';
-my $live     = 0;
-my $chunk    = 30;
-my $stop     = 180;
-my $play     = 0;
-my $get	     = 0;
-my $MaxPids  = 5;
-my $FlvPrt   = 1935;
-my $Gui      = 0;
+my @SelChn     = ();
+my @SelSer     = ();
+my $SelSin     = 350;
+my $DmpChn     = 0;
+my $OutDir     = $ENV{HOME} || (getpwuid($<))[7] || '/tmp' ;
+my $tmpdir     = '/tmp';
+my $live       = 0;
+my $chunk      = 30;
+my $stop       = 180;
+my $play       = 0;
+my $get	       = 0;
+my $MaxPids    = 5;
+my $FlvPrt     = 1935;
+my $Gui        = 0;
 
-my $true     = 1;
-my $false    = 0;
+my $true       = 1;
+my $false      = 0;
 my $vol_label;
-my $mute_label;
-my $stn_play = "fivelive";
-my $process  = 0;
+my $mute_button;
+my $stn_play   = 5;
+my $rb_label   = $Channel{$stn_play}[2];
+my $radio_button;
+my $rb_cb;
+my $stn_slist;
+my $mv_proc    = 0;
+my $mply_proc  = 0;
+my $xscr_proc  = 0;
+my $pqiv_proc  = 0;
+my $Pic_Dir    = "/mnt/backup/pictures";
 
 #These variables are pretty global??
 my (@flvcmd , @lamecmd ,@ffmpegcmd , @mp3spltcmd , @mplayercmd , @inoticmd , $PlayPath );
 #Set Common Params
-push ( @flvcmd     , ( '/usr/bin/flvstreamer' , '-q' ));
-push ( @ffmpegcmd  , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' ));
-push ( @mplayercmd , ( '/usr/bin/mplayer' , '-cache' , '8192' , '-' ));
+push ( @mplayercmd , ( '/usr/bin/mplayer' , '-cache' , '128' , -novideo , '-' ));
 
 GetOptions (
 	'channel=s'	=> \@SelChn,
@@ -152,25 +158,33 @@ sub processMediaSelector {
                 	++$media_index;
         	}
 	}
+	#print "DEBUG:: which stream $StrTyp[$serv_index] \n";
 	#print "DEBUG:: server should be $data->{media}[$media_index]->{connection}->{server}\n";
 	#Initialise hash ....
 	my %mattribs;
 	my $fcsraw  = $ua->request(HTTP::Request->new( GET => "http://" . $data->{media}[$media_index]->{connection}->{server} . "/fcs/ident" ) );
 	my $fcsdata = $xml->XMLin($fcsraw->content);
 	%mattribs = (
-		success    => 1,
-		authString => $data->{media}[$media_index]->{connection}->{authString},
-		identifier => $data->{media}[$media_index]->{connection}->{identifier},
-		encoding   => $data->{media}[$media_index]->{encoding},
-		server     => $data->{media}[$media_index]->{connection}->{server},
-		ip	   => $fcsdata->{ip},
+		success     => 1,
+		authString  => $data->{media}[$media_index]->{connection}->{authString},
+		identifier  => $data->{media}[$media_index]->{connection}->{identifier},
+		encoding    => $data->{media}[$media_index]->{encoding},
+		server      => $data->{media}[$media_index]->{connection}->{server},
+		application => $data->{media}[$media_index]->{connection}->{application},
+		ip	    => $fcsdata->{ip},
 	);
 	return %mattribs;
 }
 	
 sub streamStation {
+	#print Dumper ( @_ );
 	my $chan  = shift;
-	#print "DEBUG::channel $chan\n";
+	if ( $chan =~ /^[+-]?\d+$/ ) {
+		#print "DEBUG::channel $chan\n"
+	} else {
+		$chan = shift;
+		#print "DEBUG::channel $chan\n"
+	}
 	my $show  = $Channel{$chan}[0];
 	#print "DEBUG::show $show\n``";
 	my $title = $Channel{$chan}[2];
@@ -178,18 +192,24 @@ sub streamStation {
 	my $filetime = strftime("%Y%m%d_%H%M", @localtime);
 	
 	#This locks it to the low bandwidth iplayer flash stream
-	my $stream = "iplayer_uk_stream_aac_rtmp_lo_live";
-	my %attribs = processMediaSelector ( $show , $stream );
+	#my @stream = ( "iplayer_uk_stream_aac_rtmp_lo_live" , "iplayer_uk_stream_aac_rtmp_live" );
+	my @stream = ( "iplayer_uk_stream_aac_rtmp_live" , "iplayer_uk_stream_aac_rtmp_lo_live" );
+	my %attribs = processMediaSelector ( $show , @stream );
 	#this command may need to be in the loop, I think the auth will fail after a period.....
-	push ( @flvcmd , ( '-r' , "rtmp://$attribs{ip}:$FlvPrt/live" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/live?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}?$attribs{authString}&aifp=v001" , '--live' , '--flv' , '-' ));
+	@flvcmd = ();
+	push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/live" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/live?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}?$attribs{authString}&aifp=v001" , '--live' , '--flv' , '-' ));
 	if ( $play == 1 ) {
 		if ( $stop != 0 ) {
 				$stop = ($stop * 60);
         			push ( @flvcmd , ( '--stop' , "$stop" ) );
 		}
-                run \@flvcmd , '|' , \@mplayercmd;
+		@ffmpegcmd = ();
+                push ( @ffmpegcmd , ('/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , '-' , '-v' , '0' , '-vn' , '-f' , 'wav' , '-' ));
+                $mply_proc = start \@flvcmd , '|' , \@mplayercmd;
+		#print "DEBUG:: Do We see this????\n";
         } else {
-                push ( @ffmpegcmd , ( '-i' , '-' , '-v' , '0' , '-vn' , '-f' , 'wav' , '-' ));
+		@ffmpegcmd = ();
+                push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , '-i' , '-' , '-v' , '0' , '-vn' , '-f' , 'wav' , '-' ));
 		my $counter = 1;
 		my $runtot = 0;
                 push ( @lamecmd , ( '/usr/bin/lame' , '--quiet' , '-a' , '-q', '7' , '--resample' , '44.1' , '-b' , '32' , '-' , "dummyname" ));
@@ -197,12 +217,12 @@ sub streamStation {
 			$stop = $stop * 60;
 			$chunk = $chunk * 60;
 			#push the default chunk length onto the end
-        		push ( @flvcmd , ( '--stop' , "$chunk"  ) );
 		} else {
 			#If they haven't specified a stop stop after 4hrs with no chunks
 			$stop = 14400;
 			$chunk = 14400;
 		}
+        		push ( @flvcmd , ( '--stop' , "$chunk"  ) );
 		while ( $runtot < $stop ) {
 			my $filename = "$filetime\_$counter\_$title.mp3";
 			if ( ($stop - $runtot) < $chunk ) {
@@ -214,14 +234,22 @@ sub streamStation {
 			push ( @lamecmd , ( "$tmpdir/$filename" ));
         	        run \@flvcmd , '|' , \@ffmpegcmd , '|' , \@lamecmd;
 			my @mvcmd = ( '/bin/mv' , "$tmpdir/$filename" , "$OutDir/$filename" );
-                        if ( $process != 0 ) {
-                                finish $process;
+                        if ( $mv_proc != 0 ) {
+                                finish $mv_proc;
                         }
-                        $process = start \@mvcmd;
+                        $mv_proc = start \@mvcmd;
 			$runtot = $runtot + $chunk;
 				
 			$counter = ++$counter;
 		}
+	}
+}
+
+sub stopStation {
+	if ($mply_proc != 0){
+		$mply_proc->kill_kill;
+		kill_kill $mply_proc;
+		finish $mply_proc;
 	}
 }
 
@@ -245,7 +273,8 @@ sub downloadPID {
 			print "File $OutDir/$title.$attribs{encoding} Exists Do Not Download!!\n";
 		} else {
 			#print "will now download \n";
-        		push ( @flvcmd , ( '--resume' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/ondemand" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/ondemand?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}" ));
+			@flvcmd = ();
+        		push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '--resume' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/ondemand" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/ondemand?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}" ));
 			if ( $play == 1 ) {
 				push ( @flvcmd, '--flv' , '-' );
                 		run \@flvcmd , '|' , \@mplayercmd;
@@ -253,7 +282,8 @@ sub downloadPID {
 				push ( @flvcmd, '--flv' , "$tmpdir/$title.$attribs{encoding}" );
 				run \@flvcmd;
 				#print Dumper(@flvcmd);
-				push ( @ffmpegcmd , ( '-i' , "$tmpdir/$title.$attribs{encoding}" , '-acodec' , 'copy' , "$OutDir/$title.$attribs{encoding}"  ));
+				@ffmpegcmd = ();
+				push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , '-i' , "$tmpdir/$title.$attribs{encoding}" , '-acodec' , 'copy' , "$OutDir/$title.$attribs{encoding}"  ));
 				#print Dumper(@ffmpegcmd);
 				run \@ffmpegcmd;
                 		unlink "$tmpdir/$title.$attribs{encoding}";
@@ -307,12 +337,12 @@ sub getvol {
 	run ( \@amcmd , '|' , \@grcmd , '>' , \$out ); 
 	my @vol_array = split ( / +/ , $out );
 	#print Dumper ( @vol_array );
-	$vol_label->set_label("Current Volume: ". $vol_array[4]);
+	$vol_label->set_label("Vol: ". $vol_array[4] . "/ 31");
 	if ( $vol_array[7]  =~ m/on/ ) {
-		$mute_label->set_label("Mute Off");
+		$mute_button->set_label("Mute Off");
 		return ($vol_array[4] , $true);
 	} else {
-		$mute_label->set_label("Mute On");
+		$mute_button->set_label("Mute On");
 		return ($vol_array[4] , $false);
 	}
 }
@@ -320,11 +350,11 @@ sub getvol {
 
 sub volume {
 	shift;
-	print Dumper ( @_ );
+	#print Dumper ( @_ );
 	my $action = shift;
 	my @vol_state = getvol;
 
-	print "DEBUG:: action $action";
+	#print "DEBUG:: action $action";
 	my @amcmd = ('/usr/bin/amixer' , '-q' , 'cset' );
 
 	switch ($action) {
@@ -352,6 +382,8 @@ sub volume {
 }
 
 sub  ip_addr {
+	my $junk = shift;
+	my $request = shift;
 	my $interface;
 	my %IPs;
 
@@ -363,40 +395,89 @@ sub  ip_addr {
 	}
 
 	print Dumper(\%IPs);
+	return $IPs{$interface}->{IP};
 }
 
 sub refresh_status {
 
-getvol;
+#getvol;
+#ip_addr;
 
 }
+
+sub controlStation {
+	#This sub is called when the radio player is started or stopped it then sets the vars appropriately
+	my $button  = shift;
+	my $station = $_[0][0];
+	my $action  = $_[0][1];
+
+	#print "DEBUG:: $station station $action action \n";
+
+	if ( $action eq "start" ) {
+		streamStation $station;
+		#if it returns assumed it worked may have to check if it failed.
+		#disconnect the handler
+		$radio_button->signal_handler_disconnect($rb_cb);
+		#Change the label
+		$radio_button->set_label("Stop Radio: $rb_label");
+		$rb_cb = $radio_button->signal_connect('clicked' => \&controlStation, [$stn_play, "stop"] );
+		#disable the list control 
+		$stn_slist->sensitive($false);
+	} else {
+		stopStation $station;
+		#if it returns assumed it worked may have to check if it failed.
+		#disconnect the handler
+		$radio_button->signal_handler_disconnect($rb_cb);
+		#Change the label
+		$radio_button->set_label("Play Radio: $rb_label");
+		$rb_cb = $radio_button->signal_connect('clicked' => \&controlStation, [$stn_play, "start"] );
+		$stn_slist->sensitive($true);
+	
+	}
+}
+
+sub start_slideshow {
+	if ( $pqiv_proc != 0 ) {
+		finish $pqiv_proc;
+	}
+	#set the backlight to max::
+	system('/bin/echo 0 > /sys/class/backlight/openframe-bl/bl_power');
+	my @pqivcmd = ( '/usr/bin/pqiv' , '-fsnnid' , '10' , "$Pic_Dir" ); 
+	$pqiv_proc = start \@pqivcmd;
+	system ('/usr/bin/killall xscreensaver');
+	system ('/usr/bin/xset -dpms');
+}
+
 sub startGui {
+	#Need to init, as the use if doesn't support init
+	Gtk2->init;
+	# If loading gui for now assume playing not saving
+	$play = 1;
+	# Create the window
+	my $base_win = new Gtk2::Window( "toplevel" );
+	$base_win->set_title( "RadioControl" );
+	$base_win->signal_connect( "destroy", sub { 
+		stopStation;
+		Gtk2->main_quit; });
+	$base_win->set_border_width( 10 );
 
-Gtk2->init;
+	# Create the main vertical box.
+	my $base_vbox = new Gtk2::VBox( $false, $false );
+	$base_win->add( $base_vbox );
 
-# Create the window
-my $base_win = new Gtk2::Window( "toplevel" );
-$base_win->set_title( "RadioControl" );
-$base_win->signal_connect( "destroy", sub { Gtk2->main_quit; });
-$base_win->set_border_width( 10 );
+	# Create a horizontal frame
+	my $base_frame = new Gtk2::Frame( "JoggControl" );
+	$base_vbox->pack_start( $base_frame, $true, $true, 10 );
 
-# Create the main vertical box.
-my $base_vbox = new Gtk2::VBox( $false, $false );
-$base_win->add( $base_vbox );
-
-# Create a horizontal frame
-my $base_frame = new Gtk2::Frame( "JoggControl" );
-$base_vbox->pack_start( $base_frame, $true, $true, 10 );
-
-my $sub_hbox = new Gtk2::HBox( $false, $false );
-$base_vbox->pack_start( $sub_hbox, $true, $true, 10 );
+	my $sub_hbox = new Gtk2::HBox( $false, $false );
+	$base_vbox->pack_start( $sub_hbox, $true, $true, 10 );
 
 	my $hbbox = new Gtk2::HButtonBox();
 	$hbbox->set_border_width( 5 );
 	$hbbox->set_layout( "spread" );
-	$hbbox->set_spacing( 30 );
+	$hbbox->set_spacing( 10 );
 
-	my $ss_button = new Gtk2::Button( "Start SlideShow" );
+	my $ss_button = new Gtk2::Button( "SlideShow" );
 	$ss_button->signal_connect('clicked' => \&start_slideshow );
 	$hbbox->add( $ss_button );
 
@@ -408,9 +489,15 @@ $base_vbox->pack_start( $sub_hbox, $true, $true, 10 );
 	$voldn_button->signal_connect('clicked' => \&volume , "down" );
 	$hbbox->add( $voldn_button );
 
-	my $mute_button = new Gtk2::Button( "Mute" );
+	$vol_label = new Gtk2::Label ( "Vol: ?? / 31" );
+	$hbbox->add( $vol_label );
+
+	$mute_button = new Gtk2::Button( "Mute" );
 	$mute_button->signal_connect('clicked' => \&volume , "mute" );
 	$hbbox->add( $mute_button );
+	
+	#Initialise the volume levels
+	getvol;
 
 	my $exit_button = new Gtk2::Button( "Exit" );
 	$exit_button->signal_connect('clicked' => sub { $base_win->destroy });
@@ -434,61 +521,62 @@ $base_vbox->pack_start( $sub_hbox, $true, $true, 10 );
 	#$mid_vbbox->set_layout( "spread" );
 	$mid_vbbox->set_spacing( 30 );
 
-	my $radio_button = new Gtk2::Button( "Start Radio" );
-	$radio_button->signal_connect('clicked' => \&streamStation , $stn_play );
-	$mid_vbbox->add( $radio_button );
+	my $temp_button = new Gtk2::Button( "Stop Radio: $Channel{$stn_play}[2]" );
+	$temp_button->signal_connect('clicked' => \&stopStation, $stn_play );
+	$mid_vbbox->add( $temp_button );
+	$radio_button = new Gtk2::Button( "Play Radio: $Channel{$stn_play}[2]" );
+	#$radio_button->set_width_chars(10);
+	$rb_cb = $radio_button->signal_connect('clicked' => \&controlStation, [$stn_play , "start"] );
+	#$left_vbbox->add( $radio_button );
 
-	my $stn_label = new Gtk2::Label ( "Station to Play:" );
-	$mid_vbbox->add( $stn_label );
-	my $stn_seltd = new Gtk2::Label ( "Please Select a Station" );
-	$mid_vbbox->add( $stn_seltd );
-
-	my $selstn_button = new Gtk2::Button( "Select File" );
-	$selstn_button->signal_connect('clicked' => \&select_station );
-	$mid_vbbox->add( $selstn_button );
-
-	my $left_vbox = new Gtk2::VBox( $false, $false );
+	my $left_vbox = new Gtk2::VBox( $false, 0 );
 	$left_vframe->add ($left_vbox);
-	my $stn_slist = Gtk2::SimpleList->new  (
-		'Station' => 'text',
-		'XML'	  => 'text',
+	$stn_slist = Gtk2::SimpleList->new  (
+		'ID'	  => 'int',
 		'Name'	  => 'text',
         );
         #@{$stn_slist->{data}} = %Channel;
 	foreach my $stn ( sort {$a <=> $b} ( keys %Channel )) {
-		push  (@{$stn_slist->{data}} , ( [$Channel{$stn}[0], $Channel{$stn}[1], $Channel{$stn}[2]] ));
+		#print "DEBUG:: $stn $Channel{$stn}[2] \n";
+		push  (@{$stn_slist->{data}} , ( [$stn, $Channel{$stn}[2]] ));
 	}
-	#$stn_slist->remove_column ($stn_slist->get_column (0));
-	#$stn_slist->remove_column ($stn_slist->get_column (0));
         $left_vbox->pack_start($stn_slist, $true, $true, 10 );
+	$left_vbox->pack_start($radio_button, $true, $true, 10);
 
         $stn_slist->get_selection->signal_connect ( changed => sub {
                 my ($selection) = @_;
                 my $stn_slist = $selection->get_tree_view;
                 my ($sel) = $stn_slist->get_selected_indices;
-                $stn_play = $stn_slist->{data}[$sel][1];
-
-                #print Dumper $tiedlist;
-		$stn_seltd->set_label($stn_play);
-
+                $stn_play = $stn_slist->{data}[$sel][0];
+		$rb_label = $stn_slist->{data}[$sel][1];
+		$radio_button->set_label("Play Radio: $rb_label");
+		#Disconnect the button callback
+		$radio_button->signal_handler_disconnect($rb_cb);
+		#reconnect callback handler here, because the value seems to be static
+		$rb_cb = $radio_button->signal_connect('clicked' => \&controlStation, [$stn_play ,"start"] );
         });
 
+
+
 	my $choose_button = Gtk2::FileChooserButton->new('Select Mp3' , 'open' );
+	$choose_button->set_width_chars(10);
         $left_vbox->pack_start($choose_button, $true, $true, 10 );
 
 	my $right_vbbox = new Gtk2::VButtonBox();
 	$right_vbbox->set_border_width( 5 );
 	$right_vframe->add( $right_vbbox );
 	#$right_vbbox->set_layout( "spread" );
-	$right_vbbox->set_spacing( 30 );
-	$vol_label = new Gtk2::Label ( "Current Volume: ??" );
-	$right_vbbox->add( $vol_label );
-	$mute_label = new Gtk2::Label ( "mute?" );
-	$right_vbbox->add( $mute_label );
-	my $ip_label = new Gtk2::Label ( "IP Address:" );
-	$right_vbbox->add( $ip_label );
-	my $ip_addr = new Gtk2::Label ( "IP Address" );
-	$right_vbbox->add( $ip_addr );
+	$right_vbbox->set_spacing( 10 );
+	my $wlan_label = new Gtk2::Label ( "wlan0 IP Address:" );
+	$right_vbbox->add( $wlan_label );
+	my $wlan_ip = ip_addr 'wlan0';
+	my $wlan_addr = new Gtk2::Label ( $wlan_ip );
+	$right_vbbox->add( $wlan_addr );
+	my $eth_label = new Gtk2::Label ( "eth0 IP Address:" );
+	$right_vbbox->add( $eth_label );
+	my $eth_ip = ip_addr 'eth0';
+	my $eth_addr = new Gtk2::Label ( $eth_ip );
+	$right_vbbox->add( $eth_addr );
 
 	my $refresh_button = new Gtk2::Button( "_Refresh" );
 	$refresh_button->signal_connect('clicked' => \&refresh_status );
@@ -507,11 +595,10 @@ $base_vbox->pack_start( $sub_hbox, $true, $true, 10 );
 #If its live we can bypass the search part and jump straight to the streaming
 
 if ( $Gui  == 1 ) {
-	print ("load gui");
-
-    startGui
-
+	#print ("load gui");
+	startGui
 } elsif ( $live == 1 ) {
+	#print "\nDEBUG:: in main streamStation $SelChn[0] \n";
 	streamStation ( $SelChn[0] );
 } else {
 	my @Results = ();
