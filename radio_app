@@ -30,7 +30,6 @@ use File::Copy;
 use if defined $ENV{DISPLAY} , "Gtk2";
 #use Gtk2::Ex::Simple::List;
 use if defined $ENV{DISPLAY} , "Gtk2::SimpleList";
-
 # create object
 my $xml = new XML::Simple;
 
@@ -97,7 +96,6 @@ GetOptions (
 	'help|dump'	=> \$DmpChn,
 ) or die "Incorrect usage use --help for assistance.\n";
 
-#print "DEBUG:: $OutDir\n";
 
 if ( $DmpChn == 1 ) {
 	print "List of channels: \n";
@@ -209,7 +207,7 @@ sub streamStation {
 		#print "DEBUG:: Do We see this????\n";
         } else {
 		@ffmpegcmd = ();
-                push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , '-i' , '-' , '-v' , '0' , '-vn' , '-f' , 'wav' , '-' ));
+                push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' ,'quiet' , '-i' , '-' , '-v' , '0' , '-vn' , '-f' , 'wav' , '-' ));
 		my $counter = 1;
 		my $runtot = 0;
                 push ( @lamecmd , ( '/usr/bin/lame' , '--quiet' , '-a' , '-q', '7' , '--resample' , '44.1' , '-b' , '32' , '-' , "dummyname" ));
@@ -283,7 +281,7 @@ sub downloadPID {
 				run \@flvcmd;
 				#print Dumper(@flvcmd);
 				@ffmpegcmd = ();
-				push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , '-i' , "$tmpdir/$title.$attribs{encoding}" , '-acodec' , 'copy' , "$OutDir/$title.$attribs{encoding}"  ));
+				push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , "$tmpdir/$title.$attribs{encoding}" , '-acodec' , 'copy' , "$OutDir/$title.$attribs{encoding}"  ));
 				#print Dumper(@ffmpegcmd);
 				run \@ffmpegcmd;
                 		unlink "$tmpdir/$title.$attribs{encoding}";
