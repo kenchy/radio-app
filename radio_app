@@ -8,7 +8,6 @@
 #TODO:
 #Error trapping:
 #Spot when a media selector URL doesn't return data
-#Make sure the stream selection works
 #Resuming live recordings external loop or flvstreamer resume?
 #Get cleverer about matching the live stream currently --live will turn off other methods
 #fix playing live of AoD
@@ -30,6 +29,7 @@ use File::Copy;
 use if defined $ENV{DISPLAY} , "Gtk2";
 #use Gtk2::Ex::Simple::List;
 use if defined $ENV{DISPLAY} , "Gtk2::SimpleList";
+#use if defined $ENV{DISPLAY} , "Gnome2::Wnck";
 # create object
 my $xml = new XML::Simple;
 
@@ -70,17 +70,26 @@ my $stn_play   = 5;
 my $rb_label   = $Channel{$stn_play}[2];
 my $radio_button;
 my $rb_cb;
+my $mid_vbbox;
+my $sr_button;
+my $sr_cb;
 my $stn_slist;
+my $res_slist;
+my $kb_proc    = 0;
+my $base_win;
+my $entry;
+my $eth_addr;
+my $wlan_addr;
 my $mv_proc    = 0;
 my $mply_proc  = 0;
 my $xscr_proc  = 0;
 my $pqiv_proc  = 0;
 my $Pic_Dir    = "/mnt/backup/pictures";
+my @gui_res;
 
 #These variables are pretty global??
 my (@flvcmd , @lamecmd ,@ffmpegcmd , @mp3spltcmd , @mplayercmd , @inoticmd , $PlayPath );
 #Set Common Params
-push ( @mplayercmd , ( '/usr/bin/mplayer' , '-cache' , '128' , -novideo , '-' ));
 
 GetOptions (
 	'channel=s'	=> \@SelChn,
@@ -100,22 +109,25 @@ GetOptions (
 if ( $DmpChn == 1 ) {
 	print "List of channels: \n";
 	foreach my $stn ( sort {$a <=> $b} ( keys %Channel )) {
-		print "$stn live pid: $Channel{$stn}[0], AOD XML: $Channel{$stn}[1], Pretty Output: $Channel{$stn}[2]\n";
+		print "$stn : $Channel{$stn}[0], AOD XML: $Channel{$stn}[1], Pretty Output: $Channel{$stn}[2]\n";
 	}
 
-print "\nUsage: ARGV[0] --live --channel x --chunk y --end z --outdir <dir> [--play]\n";
+print "\nUsage: $0 --live --channel x --chunk y --end z --outdir <dir> [--play] -\n";
 print "--live:    download the specified channel, chunk will
            split the file every y mins, end, stop after z mins
-           (Requires flvstreamer, ffmpeg, lame and mp3splt)
+           (Requires flvstreamer, ffmpeg, and lame)
 --play:    will play it (requires mplayer), chunk is ignored
 --channel: a single integer refers to bb channels. see --help for a list.\n";
 
-print "\nUsage: ARGV[0] [--get] --channel x[,y,z] --since n --outdir <dir> --find <string> [--find <string> --find <string>]\n";
+print "\nUsage: $0 [--get] --channel x[,y,z] --since n --outdir <dir> --find <string> [--find <string> --find <string>]\n";
 print "default:   search in specified channels for search string(s)
 --since:   will result in only searching for files available in the last n hours
 --get:     fetch the files (needs flvstreamer and ffmpeg)
 --channel: comma seperated list of channels to search (--help for list)
 --play:    attempt to play, does not seem to work (needs mplayer to not work)\n";
+
+print "\nUsage: $0 --gui 
+--gui:	   load gui for live radio streaming (accepts no other options).\n";
 exit;
 }
 sub isitaPID {
@@ -201,8 +213,8 @@ sub streamStation {
 				$stop = ($stop * 60);
         			push ( @flvcmd , ( '--stop' , "$stop" ) );
 		}
-		@ffmpegcmd = ();
-                push ( @ffmpegcmd , ('/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , '-' , '-v' , '0' , '-vn' , '-f' , 'wav' , '-' ));
+		@mplayercmd = ();
+		push ( @mplayercmd , ( '/usr/bin/mplayer' , -novideo , '-' , '-input' , 'file=/tmp/mplayer.fifo' , '-cache' , '512' ) );
                 $mply_proc = start \@flvcmd , '|' , \@mplayercmd;
 		#print "DEBUG:: Do We see this????\n";
         } else {
@@ -248,6 +260,7 @@ sub stopStation {
 		$mply_proc->kill_kill;
 		kill_kill $mply_proc;
 		finish $mply_proc;
+		$mply_proc = 0;
 	}
 }
 
@@ -274,8 +287,10 @@ sub downloadPID {
 			@flvcmd = ();
         		push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '--resume' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/ondemand" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/ondemand?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}" ));
 			if ( $play == 1 ) {
+				@mplayercmd = ();
+				push ( @mplayercmd , ( '/usr/bin/mplayer' , -novideo , '-' , '-input' , 'file=/tmp/mplayer.fifo' , '-cache' , '8192' ) );
 				push ( @flvcmd, '--flv' , '-' );
-                		run \@flvcmd , '|' , \@mplayercmd;
+                		$mply_proc = start \@flvcmd , '|' , \@mplayercmd;
 			} else {
 				push ( @flvcmd, '--flv' , "$tmpdir/$title.$attribs{encoding}" );
 				run \@flvcmd;
@@ -300,6 +315,8 @@ sub searchShow {
 	my $since    = shift;
 	my @channels = @_;
 	my $now      = time();
+	#print "searcgh $search since $since channels";
+	#print Dumper (@channels); 
 	#isitaPID ($search);
 	foreach my $station ( @channels ) {
 		if (!defined($Channel{$station}[3])) {
@@ -380,7 +397,7 @@ sub volume {
 }
 
 sub  ip_addr {
-	my $junk = shift;
+	#my $junk = shift;
 	my $request = shift;
 	my $interface;
 	my %IPs;
@@ -392,14 +409,22 @@ sub  ip_addr {
         	$IPs{$interface}->{IP}=$1 if /inet\D+(\d+\.\d+\.\d+\.\d+)/i;
 	}
 
-	print Dumper(\%IPs);
-	return $IPs{$interface}->{IP};
+	#print Dumper(\%IPs);
+	#print "request is $request";
+	if ( defined $IPs{$request}->{IP} ) {
+		return $IPs{$request}->{IP};
+	} else {
+		return "NO_IP";
+	}
 }
 
 sub refresh_status {
 
 #getvol;
 #ip_addr;
+#$eth_ip = ip_addr 'eth0';
+$wlan_addr->set_label( ip_addr 'wlan0' );
+$eth_addr->set_label( ip_addr 'eth0' );
 
 }
 
@@ -421,6 +446,7 @@ sub controlStation {
 		$rb_cb = $radio_button->signal_connect('clicked' => \&controlStation, [$stn_play, "stop"] );
 		#disable the list control 
 		$stn_slist->sensitive($false);
+		$sr_button->sensitive($false);
 	} else {
 		stopStation $station;
 		#if it returns assumed it worked may have to check if it failed.
@@ -430,6 +456,7 @@ sub controlStation {
 		$radio_button->set_label("Play Radio: $rb_label");
 		$rb_cb = $radio_button->signal_connect('clicked' => \&controlStation, [$stn_play, "start"] );
 		$stn_slist->sensitive($true);
+		$sr_button->sensitive($true);
 	
 	}
 }
@@ -446,18 +473,107 @@ sub start_slideshow {
 	system ('/usr/bin/xset -dpms');
 }
 
+sub keyboard_control {
+	my $junk = shift;
+	my @kbd_command = ( '/usr/bin/matchbox-keyboard' );
+	#my @kbd_command = ( '/usr/bin/matchbox-keyboard' , '-xid' );
+	if ( $kb_proc == 0 ) {
+		my $in;
+		my $xid;
+		$kb_proc = start \@kbd_command , \$in, \$xid;
+		sleep 2;
+		#Change the label
+		#my $screen = Gnome2::Wnck::Screen -> get_default();
+		#$screen -> force_update();
+		#my @windows = $screen -> get_windows();
+		#my $id;
+		#foreach my $window (@windows) {
+		#	my $name = $window -> get_name();
+		#	print "$name\n";
+		#	$id = $window -> get_xid();
+		#	print "$id\n";
+		#}
+		#$kb_button->set_label("Close Keyboard");
+		$junk->set_label("Close Keyboard");
+		$base_win->set_focus($entry);
+	} else {
+		$kb_proc->kill_kill;
+		kill_kill $kb_proc;
+		finish $kb_proc;
+		$kb_proc = 0;
+		#$kb_button->set_label("Open Keyboard");
+		$junk->set_label("Open Keyboard");
+	}
+}
+
+sub gui_search {
+	my $btn  = shift;
+	my $srch = $_[0][0];
+	my @chnl = ($_[0][1]);
+	@gui_res = ();
+	@gui_res = searchShow ($srch->get_text , $SelSin , @chnl);
+	#return @show_res;
+	#print Dumper ( @gui_res );
+	@{$res_slist->{data}} = ();
+	my $res_c = 1;
+	foreach my $res ( @gui_res ) {
+		#print "DEBUG:: $stn $Channel{$stn}[2] \n";
+		push  (  @{$res_slist->{data}} , ( [$res_c , @$res[1]]));
+		++$res_c
+		#print Dumper (@{$res_slist->{data}});
+	}
+
+}
+
+sub gui_play {
+	my $btn = shift;
+	my @play   = $_[0][0];
+	my $action = $_[0][1];
+
+	print Dumper (@play);
+	print "action is $action \n";
+	if  ( $action eq "start" ) {
+		downloadPID (@play);
+		$sr_button->set_label("Stop");
+		#Disconnect the buttons callback
+		$sr_button->signal_handler_disconnect($sr_cb);
+		#reconnect callback handler here, because the value seems to be static
+		$sr_cb = $sr_button->signal_connect('clicked' => \&gui_play , [ @play , "stop" ] );
+		$stn_slist->sensitive($false);
+		$radio_button->sensitive($false);
+	} else {
+		stopStation "1";
+		$sr_button->set_label("Play");
+		#Disconnect the buttons callback
+		$sr_button->signal_handler_disconnect($sr_cb);
+		#reconnect callback handler here, because the value seems to be static
+		$sr_cb = $sr_button->signal_connect('clicked' => \&gui_play , [ @play , "start" ] );
+		$stn_slist->sensitive($true);
+		$radio_button->sensitive($true);
+	}
+		
+
+
+}
+	
+
 sub startGui {
 	#Need to init, as the use if doesn't support init
 	Gtk2->init;
 	# If loading gui for now assume playing not saving
 	$play = 1;
 	# Create the window
-	my $base_win = new Gtk2::Window( "toplevel" );
+	$base_win = new Gtk2::Window( "toplevel" );
 	$base_win->set_title( "RadioControl" );
 	$base_win->signal_connect( "destroy", sub { 
 		stopStation;
+		if ( $kb_proc != 0 ) {
+			$kb_proc->kill_kill;
+			kill_kill $kb_proc;
+			finish $kb_proc;
+		}
 		Gtk2->main_quit; });
-	$base_win->set_border_width( 10 );
+	$base_win->set_border_width( 5 );
 
 	# Create the main vertical box.
 	my $base_vbox = new Gtk2::VBox( $false, $false );
@@ -465,15 +581,18 @@ sub startGui {
 
 	# Create a horizontal frame
 	my $base_frame = new Gtk2::Frame( "JoggControl" );
-	$base_vbox->pack_start( $base_frame, $true, $true, 10 );
+	$base_vbox->pack_start( $base_frame, $true, $true, 5 );
+
+	my $scrolledwindow=new Gtk2::ScrolledWindow;
+	$base_vbox->pack_start( $scrolledwindow, $true, $true, 5 );
 
 	my $sub_hbox = new Gtk2::HBox( $false, $false );
-	$base_vbox->pack_start( $sub_hbox, $true, $true, 10 );
+	$base_vbox->pack_start( $sub_hbox, $true, $true, 2 );
 
 	my $hbbox = new Gtk2::HButtonBox();
 	$hbbox->set_border_width( 5 );
 	$hbbox->set_layout( "spread" );
-	$hbbox->set_spacing( 10 );
+	$hbbox->set_spacing( 5 );
 
 	my $ss_button = new Gtk2::Button( "SlideShow" );
 	$ss_button->signal_connect('clicked' => \&start_slideshow );
@@ -503,43 +622,41 @@ sub startGui {
 
 	$base_frame->add( $hbbox );
 
-
-
-	my $left_vframe = new Gtk2::Frame( "Radio Select" );
-	my $mid_vframe = new Gtk2::Frame( "Radio Control" );
-	my $right_vframe = new Gtk2::Frame( "Status and Info" );
+	my $left_vframe = new Gtk2::Frame( "Station Select" );
+	my $mid_vframe = new Gtk2::Frame( "AoD Control" );
+	my $right_vframe = new Gtk2::Frame( "Status" );
 
 	$sub_hbox->pack_start($left_vframe, $true, $true, 10);
 	$sub_hbox->pack_start($mid_vframe, $true, $true, 10);
 	$sub_hbox->pack_start($right_vframe, $true, $true, 10);
 
-	my $mid_vbbox = new Gtk2::VButtonBox();
+	$mid_vbbox = new Gtk2::VButtonBox();
 	$mid_vbbox->set_border_width( 5 );
 	$mid_vframe->add( $mid_vbbox );
-	#$mid_vbbox->set_layout( "spread" );
-	$mid_vbbox->set_spacing( 30 );
+	$mid_vbbox->set_layout( "start" );
+	$mid_vbbox->set_spacing( 5 );
 
-	my $temp_button = new Gtk2::Button( "Stop Radio: $Channel{$stn_play}[2]" );
-	$temp_button->signal_connect('clicked' => \&stopStation, $stn_play );
-	$mid_vbbox->add( $temp_button );
+	#my $temp_button = new Gtk2::Button( "Stop Radio: $Channel{$stn_play}[2]" );
+	#$temp_button->signal_connect('clicked' => \&stopStation, $stn_play );
+	#$mid_vbbox->add( $temp_button );
 	$radio_button = new Gtk2::Button( "Play Radio: $Channel{$stn_play}[2]" );
-	#$radio_button->set_width_chars(10);
 	$rb_cb = $radio_button->signal_connect('clicked' => \&controlStation, [$stn_play , "start"] );
-	#$left_vbbox->add( $radio_button );
-
+	
 	my $left_vbox = new Gtk2::VBox( $false, 0 );
 	$left_vframe->add ($left_vbox);
 	$stn_slist = Gtk2::SimpleList->new  (
 		'ID'	  => 'int',
 		'Name'	  => 'text',
         );
-        #@{$stn_slist->{data}} = %Channel;
 	foreach my $stn ( sort {$a <=> $b} ( keys %Channel )) {
 		#print "DEBUG:: $stn $Channel{$stn}[2] \n";
 		push  (@{$stn_slist->{data}} , ( [$stn, $Channel{$stn}[2]] ));
 	}
-        $left_vbox->pack_start($stn_slist, $true, $true, 10 );
-	$left_vbox->pack_start($radio_button, $true, $true, 10);
+        $left_vbox->pack_start($stn_slist, $true, $true, 1 );
+	
+	$entry = Gtk2::Entry->new;
+	$sr_button= Gtk2::Button->new( "Search" );
+	$sr_cb = $sr_button->signal_connect('clicked' => \&gui_search , [ $entry , $stn_play ] );
 
         $stn_slist->get_selection->signal_connect ( changed => sub {
                 my ($selection) = @_;
@@ -548,32 +665,66 @@ sub startGui {
                 $stn_play = $stn_slist->{data}[$sel][0];
 		$rb_label = $stn_slist->{data}[$sel][1];
 		$radio_button->set_label("Play Radio: $rb_label");
-		#Disconnect the button callback
+		$sr_button->set_label("Search");
+		#Disconnect the buttons callback
 		$radio_button->signal_handler_disconnect($rb_cb);
+		$sr_button->signal_handler_disconnect($sr_cb);
 		#reconnect callback handler here, because the value seems to be static
 		$rb_cb = $radio_button->signal_connect('clicked' => \&controlStation, [$stn_play ,"start"] );
+		$sr_cb = $sr_button->signal_connect('clicked' => \&gui_search , [ $entry , $stn_play ] );
         });
 
-
+	$res_slist = Gtk2::SimpleList->new  (
+		'ID'	  => 'int',
+		'Title'	  => 'text',
+        );
+	$scrolledwindow->add_with_viewport($res_slist);
+        $res_slist->get_selection->signal_connect ( changed => sub {
+                my ($selection) = @_;
+                my $res_slist = $selection->get_tree_view;
+                my ($sel) = $res_slist->get_selected_indices;
+                my $res_play = $res_slist->{data}[$sel][0];
+		#$rb_label = $stn_slist->{data}[$sel][1];
+		$sr_button->set_label("Play");
+		#Disconnect the buttons callback
+		$sr_button->signal_handler_disconnect($sr_cb);
+		#reconnect callback handler here, because the value seems to be static
+		$sr_cb = $sr_button->signal_connect('clicked' => \&gui_play, [$gui_res[--$res_play], "start"] );
+        });
 
 	my $choose_button = Gtk2::FileChooserButton->new('Select Mp3' , 'open' );
 	$choose_button->set_width_chars(10);
-        $left_vbox->pack_start($choose_button, $true, $true, 10 );
+
+	my $kb_button= Gtk2::Button->new( "Open Keyboard" );
+	$kb_button->signal_connect('clicked' => \&keyboard_control);
+
+	my $pp_button= Gtk2::Button->new( "Pause/Cont." );
+	$pp_button->signal_connect('clicked' => sub {
+		system '/bin/echo pause > /tmp/mplayer.fifo';
+	});
+
+	$mid_vbbox->add($entry);
+	$mid_vbbox->add($kb_button);
+	$mid_vbbox->add($sr_button);
+        $mid_vbbox->add($radio_button);
+        $mid_vbbox->add($pp_button);
+        #$mid_vbbox->add($choose_button);
+
 
 	my $right_vbbox = new Gtk2::VButtonBox();
 	$right_vbbox->set_border_width( 5 );
 	$right_vframe->add( $right_vbbox );
-	#$right_vbbox->set_layout( "spread" );
+	$right_vbbox->set_layout( "start" );
 	$right_vbbox->set_spacing( 10 );
 	my $wlan_label = new Gtk2::Label ( "wlan0 IP Address:" );
 	$right_vbbox->add( $wlan_label );
 	my $wlan_ip = ip_addr 'wlan0';
-	my $wlan_addr = new Gtk2::Label ( $wlan_ip );
+	$wlan_addr = new Gtk2::Label ( $wlan_ip );
 	$right_vbbox->add( $wlan_addr );
 	my $eth_label = new Gtk2::Label ( "eth0 IP Address:" );
 	$right_vbbox->add( $eth_label );
 	my $eth_ip = ip_addr 'eth0';
-	my $eth_addr = new Gtk2::Label ( $eth_ip );
+	$eth_addr = new Gtk2::Label ( $eth_ip );
 	$right_vbbox->add( $eth_addr );
 
 	my $refresh_button = new Gtk2::Button( "_Refresh" );
@@ -591,6 +742,10 @@ sub startGui {
 #For a live stream only use the first one
 @SelChn = split(/,/,join(',',@SelChn));
 #If its live we can bypass the search part and jump straight to the streaming
+
+#hack try to stop mplayer
+#system '/bin/echo stop > /tmp/mplayer.fifo';
+system '/usr/bin/killall mplayer';
 
 if ( $Gui  == 1 ) {
 	#print ("load gui");
