@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-#get_radio V0.4
+#get_radio V0.6
 #works in all meaningful ways
 #Allows multiple searches and channels for program downloading
 #Caches the XML for the AOD pages so that the file is only pulled once
@@ -10,7 +10,6 @@
 #Spot when a media selector URL doesn't return data
 #Resuming live recordings external loop or flvstreamer resume?
 #Get cleverer about matching the live stream currently --live will turn off other methods
-#fix playing live of AoD
 
 
 # use module
@@ -26,8 +25,8 @@ use HTTP::Request;
 use LWP::UserAgent;
 use IPC::Run qw( run start );
 use File::Copy;
+use threads;
 use if defined $ENV{DISPLAY} , "Gtk2";
-#use Gtk2::Ex::Simple::List;
 use if defined $ENV{DISPLAY} , "Gtk2::SimpleList";
 #use if defined $ENV{DISPLAY} , "Gnome2::Wnck";
 # create object
@@ -36,13 +35,13 @@ my $xml = new XML::Simple;
 #Some Vars
 #inoticoming doesn't work with a station name that starts with a number
 my %Channel = (
-		1  => [ "bbc_radio_one"       , "radio1"     , "Radio 1" ],
-		2  => [ "bbc_radio_two"       , "radio2"     , "Radio 2" ],
-		3  => [ "bbc_radio_three"     , "radio3"     , "Radio 3" ],
-		4  => [ "bbc_radio_fourfm"    , "radio4"     , "Radio 4" ],
-		5  => [ "bbc_radio_five_live" , "fivelive"   , "R5 live"  ],
+		1  => [ "bbc_radio_one"       , "radio1"     , "Radio1" ],
+		2  => [ "bbc_radio_two"       , "radio2"     , "Radio2" ],
+		3  => [ "bbc_radio_three"     , "radio3"     , "Radio3" ],
+		4  => [ "bbc_radio_fourfm"    , "radio4"     , "Radio4" ],
+		5  => [ "bbc_radio_five_live" , "fivelive"   , "R5live"  ],
 		6  => [ "bbc_6music"          , "6music"     , "R6music" ],
-		7  => [ "bbc_7"               , "bbc7"       , "BBC 7  " ],
+		7  => [ "bbc_7"               , "bbc7"       , "BBC7" ],
 		10 => [ "bbc_radio_wales_fm"  , "radiowales" , "R.Wales" ],
 		11 => [ "bbc_wm"              , "bbc_wm"     , "RadioWM" ],
 );
@@ -80,7 +79,6 @@ my $base_win;
 my $entry;
 my $eth_addr;
 my $wlan_addr;
-my $mv_proc    = 0;
 my $mply_proc  = 0;
 my $xscr_proc  = 0;
 my $pqiv_proc  = 0;
@@ -103,6 +101,7 @@ GetOptions (
 	'play'		=> \$play,
 	'gui'		=> \$Gui,
 	'help|dump'	=> \$DmpChn,
+	'slide'		=> \$Pic_Dir
 ) or die "Incorrect usage use --help for assistance.\n";
 
 
@@ -160,12 +159,14 @@ sub processMediaSelector {
 	my $media_index = 0;
 	my $serv_index = 0;
 	until ( ( $data->{media}[$media_index]->{service} eq $StrTyp[$serv_index] ) or ( defined($data->{media}[$media_index]->{service}) == 0 ) ) {
-		$serv_index = 0;
+		print "DEBUG:: return service is $data->{media}[$media_index]->{service}\n";
+		print "DEBUG:: match  service is $StrTyp[$serv_index]\n";
+		$media_index = 0;
 		until ( ( $data->{media}[$media_index]->{service} eq $StrTyp[$serv_index] ) or ( $serv_index >= $#StrTyp ) ) {
-               	++$serv_index;
+               	++$media_index;
 		}
 		if ( $data->{media}[$media_index]->{service} ne $StrTyp[$serv_index] ) {
-                	++$media_index;
+                	++$serv_index;
         	}
 	}
 	#print "DEBUG:: which stream $StrTyp[$serv_index] \n";
@@ -177,11 +178,13 @@ sub processMediaSelector {
 	%mattribs = (
 		success     => 1,
 		authString  => $data->{media}[$media_index]->{connection}->{authString},
+		authExpires => $data->{media}[$media_index]->{connection}->{authExpires},
 		identifier  => $data->{media}[$media_index]->{connection}->{identifier},
 		encoding    => $data->{media}[$media_index]->{encoding},
 		server      => $data->{media}[$media_index]->{connection}->{server},
 		application => $data->{media}[$media_index]->{connection}->{application},
 		ip	    => $fcsdata->{ip},
+		stream	    => $StrTyp[$serv_index],
 	);
 	return %mattribs;
 }
@@ -202,13 +205,12 @@ sub streamStation {
 	my $filetime = strftime("%Y%m%d_%H%M", @localtime);
 	
 	#This locks it to the low bandwidth iplayer flash stream
-	#my @stream = ( "iplayer_uk_stream_aac_rtmp_lo_live" , "iplayer_uk_stream_aac_rtmp_live" );
-	my @stream = ( "iplayer_uk_stream_aac_rtmp_live" , "iplayer_uk_stream_aac_rtmp_lo_live" );
+	my @stream = ( "iplayer_uk_stream_aac_rtmp_lo_live" , "iplayer_uk_stream_aac_rtmp_live" );
+	#my @stream = ( "iplayer_uk_stream_aac_rtmp_live" , "iplayer_uk_stream_aac_rtmp_lo_live" );
 	my %attribs = processMediaSelector ( $show , @stream );
-	#this command may need to be in the loop, I think the auth will fail after a period.....
-	@flvcmd = ();
-	push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/live" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/live?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}?$attribs{authString}&aifp=v001" , '--live' , '--flv' , '-' ));
 	if ( $play == 1 ) {
+		@flvcmd = ();
+		push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/live" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/live?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}?$attribs{authString}&aifp=v001" , '--live' , '--flv' , '-' ));
 		if ( $stop != 0 ) {
 				$stop = ($stop * 60);
         			push ( @flvcmd , ( '--stop' , "$stop" ) );
@@ -232,9 +234,23 @@ sub streamStation {
 			$stop = 14400;
 			$chunk = 14400;
 		}
-        		push ( @flvcmd , ( '--stop' , "$chunk"  ) );
+			#Push the initial values into the flvstreamed. This will be periodically refreshed...
+			@flvcmd = ();
+			push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}?$attribs{authString}&aifp=v001" , '--live' , '--flv' , '-' , '--stop' , "$chunk" ));
+		#initialise the thread variable
+		my $live_thread = 0;
 		while ( $runtot < $stop ) {
 			my $filename = "$filetime\_$counter\_$title.mp3";
+			if ( $live_thread != 0 ) {
+				my $attribs = $live_thread->join;
+				%attribs = %$attribs;
+				@flvcmd = ();
+				push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}?$attribs{authString}&aifp=v001" , '--live' , '--flv' , '-' , '--stop' , "$chunk" ));
+			}
+			print "RETURNED ATTRIBS HERE\n";
+			print "EXPIRES: $attribs{authExpires}\n";
+			print "STREAM:  $attribs{stream}\n";
+			print "IDENT:   $attribs{identifier}\n";
 			if ( ($stop - $runtot) < $chunk ) {
 				$chunk = $stop - $runtot;
 				pop ( @flvcmd );
@@ -243,16 +259,25 @@ sub streamStation {
 			pop ( @lamecmd );
 			push ( @lamecmd , ( "$tmpdir/$filename" ));
         	        run \@flvcmd , '|' , \@ffmpegcmd , '|' , \@lamecmd;
-			my @mvcmd = ( '/bin/mv' , "$tmpdir/$filename" , "$OutDir/$filename" );
-                        if ( $mv_proc != 0 ) {
-                                finish $mv_proc;
-                        }
-                        $mv_proc = start \@mvcmd;
 			$runtot = $runtot + $chunk;
-				
 			$counter = ++$counter;
+			$live_thread = threads->new(\&refreshFlv, $filename, $show, @stream);
+		}
+		if ($live_thread != 0 ){
+			$live_thread->join;
 		}
 	}
+}
+
+sub refreshFlv {
+	my $tfile    = shift;
+	my $tchan    = shift;
+	my @tstreams = @_;
+	my @mvcmd = ( '/bin/mv' , "$tmpdir/$tfile" , "$OutDir/$tfile" );
+	run \@mvcmd;
+	my %tattribs = processMediaSelector ( $tchan , @tstreams );
+	#print Dumper %tattribs;
+	return \%tattribs;
 }
 
 sub stopStation {
@@ -266,7 +291,7 @@ sub stopStation {
 
 sub downloadPID {
 	my @shows  = @_;
-	my @stream = ( "iplayer_uk_stream_mp3" , "iplayer_intl_stream_mp3");
+	my @stream = ( "iplayer_uk_stream_mp3" , "iplayer_intl_stream_mp3" , "iplayer_intl_stream_mp3_lo" );
 	#my @stream = ( "iplayer_uk_stream_mp3" );
 	#print Dumper (@shows);
 	my $show_index = 0;
@@ -583,44 +608,64 @@ sub startGui {
 	my $base_frame = new Gtk2::Frame( "JoggControl" );
 	$base_vbox->pack_start( $base_frame, $true, $true, 5 );
 
+	my $top_hbox = new Gtk2::HBox( $false, $false );
+	$base_frame->add( $top_hbox );
+
 	my $scrolledwindow=new Gtk2::ScrolledWindow;
 	$base_vbox->pack_start( $scrolledwindow, $true, $true, 5 );
 
 	my $sub_hbox = new Gtk2::HBox( $false, $false );
 	$base_vbox->pack_start( $sub_hbox, $true, $true, 2 );
 
-	my $hbbox = new Gtk2::HButtonBox();
-	$hbbox->set_border_width( 5 );
-	$hbbox->set_layout( "spread" );
-	$hbbox->set_spacing( 5 );
+	my $hbbox1 = new Gtk2::HButtonBox();
+	$hbbox1->set_border_width( 5 );
+	$hbbox1->set_layout( "edge" );
+	$hbbox1->set_spacing( 5 );
+
+	my $hbbox2 = new Gtk2::HButtonBox();
+	$hbbox2->set_border_width( 5 );
+	$hbbox2->set_layout( "edge" );
+	$hbbox2->set_spacing( 5 );
 
 	my $ss_button = new Gtk2::Button( "SlideShow" );
 	$ss_button->signal_connect('clicked' => \&start_slideshow );
-	$hbbox->add( $ss_button );
+	$hbbox1->add( $ss_button );
+
+	my $ssdir_button = Gtk2::FileChooserButton->new('Set SlideShow Folder' , 'select-folder' );
+	$ssdir_button->set_current_folder( "$Pic_Dir" );
+	$hbbox1->add( $ssdir_button );
+
+	$ssdir_button->signal_connect('current-folder-changed' => sub { 
+		$Pic_Dir = $ssdir_button->get_filename;
+		#print "DEBUG:: pc_dir $Pic_Dir\n";
+		#print Dumper ( $ssdir_button->list_shortcut_folders );
+	 });
+
 
 	my $volup_button = new Gtk2::Button( "Vol Up" );
 	$volup_button->signal_connect('clicked' => \&volume , "up" );
-	$hbbox->add( $volup_button );
+	$hbbox2->add( $volup_button );
 
 	my $voldn_button = new Gtk2::Button( "Vol Dn" );
 	$voldn_button->signal_connect('clicked' => \&volume , "down" );
-	$hbbox->add( $voldn_button );
+	$hbbox2->add( $voldn_button );
 
 	$vol_label = new Gtk2::Label ( "Vol: ?? / 31" );
-	$hbbox->add( $vol_label );
+	$hbbox2->add( $vol_label );
 
 	$mute_button = new Gtk2::Button( "Mute" );
 	$mute_button->signal_connect('clicked' => \&volume , "mute" );
-	$hbbox->add( $mute_button );
+	$hbbox2->add( $mute_button );
 	
 	#Initialise the volume levels
 	getvol;
 
 	my $exit_button = new Gtk2::Button( "Exit" );
 	$exit_button->signal_connect('clicked' => sub { $base_win->destroy });
-	$hbbox->add( $exit_button );
+	$hbbox2->add( $exit_button );
 
-	$base_frame->add( $hbbox );
+	$top_hbox->pack_start( $hbbox1, $true, $true, 2 );
+	$top_hbox->pack_start( $hbbox2, $true, $true, 2 );
 
 	my $left_vframe = new Gtk2::Frame( "Station Select" );
 	my $mid_vframe = new Gtk2::Frame( "AoD Control" );
@@ -700,7 +745,16 @@ sub startGui {
 
 	my $pp_button= Gtk2::Button->new( "Pause/Cont." );
 	$pp_button->signal_connect('clicked' => sub {
-		system '/bin/echo pause > /tmp/mplayer.fifo';
+		if ( $mply_proc != 0 ) {
+			system '/bin/echo pause > /tmp/mplayer.fifo';
+		}
+	});
+
+	my $cc_button = Gtk2::Button->new( "Clear AoD Cache" );
+	$cc_button->signal_connect('clicked' => sub {
+		foreach my $station ( %Channel ) {
+			undef $Channel{$station}[3];
+		}
 	});
 
 	$mid_vbbox->add($entry);
@@ -708,6 +762,7 @@ sub startGui {
 	$mid_vbbox->add($sr_button);
         $mid_vbbox->add($radio_button);
         $mid_vbbox->add($pp_button);
+        $mid_vbbox->add($cc_button);
         #$mid_vbbox->add($choose_button);
 
 
