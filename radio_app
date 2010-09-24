@@ -8,7 +8,6 @@
 #TODO:
 #Error trapping:
 #Spot when a media selector URL doesn't return data
-#Resuming live recordings external loop or flvstreamer resume?
 #Get cleverer about matching the live stream currently --live will turn off other methods
 
 
@@ -35,15 +34,16 @@ my $xml = new XML::Simple;
 #Some Vars
 #inoticoming doesn't work with a station name that starts with a number
 my %Channel = (
-		1  => [ "bbc_radio_one"       , "radio1"     , "Radio1" ],
-		2  => [ "bbc_radio_two"       , "radio2"     , "Radio2" ],
-		3  => [ "bbc_radio_three"     , "radio3"     , "Radio3" ],
-		4  => [ "bbc_radio_fourfm"    , "radio4"     , "Radio4" ],
-		5  => [ "bbc_radio_five_live" , "fivelive"   , "R5live"  ],
-		6  => [ "bbc_6music"          , "6music"     , "R6music" ],
-		7  => [ "bbc_7"               , "bbc7"       , "BBC7" ],
-		10 => [ "bbc_radio_wales_fm"  , "radiowales" , "R.Wales" ],
-		11 => [ "bbc_wm"              , "bbc_wm"     , "RadioWM" ],
+		1  => [ "bbc_radio_one"       		   , "radio1"     , "Radio1" ],
+		2  => [ "bbc_radio_two"       	       	   , "radio2"     , "Radio2" ],
+		3  => [ "bbc_radio_three"     		   , "radio3"     , "Radio3" ],
+		4  => [ "bbc_radio_fourfm"      	   , "radio4"     , "Radio4" ],
+		5  => [ "bbc_radio_five_live" 		   , "fivelive"   , "R5live"  ],
+		6  => [ "bbc_6music"                       , "6music"     , "R6music" ],
+		7  => [ "bbc_7"               		   , "bbc7"       , "BBC7" ],
+		8  => [ "bbc_radio_five_live_sports_extra" , "sportsextra" , "R5LSX" ],
+		10 => [ "bbc_radio_wales_fm"  		   , "radiowales" , "R.Wales" ],
+		11 => [ "bbc_wm"         	           , "bbc_wm"     , "RadioWM" ],
 );
 
 my @SelChn     = ();
@@ -53,6 +53,7 @@ my $DmpChn     = 0;
 my $OutDir     = $ENV{HOME} || (getpwuid($<))[7] || '/tmp' ;
 my $tmpdir     = '/tmp';
 my $live       = 0;
+my $rawlive    = 0;
 my $chunk      = 30;
 my $stop       = 180;
 my $play       = 0;
@@ -96,6 +97,7 @@ GetOptions (
 	'outdir=s'	=> \$OutDir,
 	'get'		=> \$get,
 	'live'		=> \$live,
+	'rawlive'	=> \$rawlive,
 	'chunk=i'	=> \$chunk,
 	'end=i'		=> \$stop,
 	'play'		=> \$play,
@@ -115,6 +117,8 @@ print "\nUsage: $0 --live --channel x --chunk y --end z --outdir <dir> [--play] 
 print "--live:    download the specified channel, chunk will
            split the file every y mins, end, stop after z mins
            (Requires flvstreamer, ffmpeg, and lame)
+--rawlive: download the aac stream, and use ffmpeg to copy it to an mp4 container
+           (very low CPU, ffmpeg seems to generate slightly iffy files)
 --play:    will play it (requires mplayer), chunk is ignored
 --channel: a single integer refers to bb channels. see --help for a list.\n";
 
@@ -220,11 +224,19 @@ sub streamStation {
                 $mply_proc = start \@flvcmd , '|' , \@mplayercmd;
 		#print "DEBUG:: Do We see this????\n";
         } else {
+		my $file_suffix;
 		@ffmpegcmd = ();
-                push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' ,'quiet' , '-i' , '-' , '-v' , '0' , '-vn' , '-f' , 'wav' , '-' ));
+		if ($rawlive == 0){
+                	push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' ,'quiet' , '-i' , '-' , '-v' , '0' , '-vn' , '-f' , 'wav' , '-' ));
+                	push ( @lamecmd , ( '/usr/bin/lame' , '--quiet' , '-a' , '-q', '7' , '--resample' , '44.1' , '-b' , '32' , '-' , "dummyname" ));
+			$file_suffix = "mp3";
+		} else {
+                	push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' ,'quiet' , '-i' , '-' , '-v' , '0' , '-vn' , '-metadata' , 'mimeType=audio/aac' , '-acodec' , 'copy' , 'dummyname' ));
+			$file_suffix = "m4a";
+		}
+	
 		my $counter = 1;
 		my $runtot = 0;
-                push ( @lamecmd , ( '/usr/bin/lame' , '--quiet' , '-a' , '-q', '7' , '--resample' , '44.1' , '-b' , '32' , '-' , "dummyname" ));
 		if ( $stop != 0 ) {
 			$stop = $stop * 60;
 			$chunk = $chunk * 60;
@@ -240,7 +252,7 @@ sub streamStation {
 		#initialise the thread variable
 		my $live_thread = 0;
 		while ( $runtot < $stop ) {
-			my $filename = "$filetime\_$counter\_$title.mp3";
+			my $filename = "$filetime\_$counter\_$title.$file_suffix";
 			if ( $live_thread != 0 ) {
 				my $attribs = $live_thread->join;
 				%attribs = %$attribs;
@@ -256,9 +268,15 @@ sub streamStation {
 				pop ( @flvcmd );
         			push ( @flvcmd , "$chunk"  );
 			}
-			pop ( @lamecmd );
-			push ( @lamecmd , ( "$tmpdir/$filename" ));
-        	        run \@flvcmd , '|' , \@ffmpegcmd , '|' , \@lamecmd;
+			if ( $rawlive == 0 ) {
+				pop ( @lamecmd );
+				push ( @lamecmd , ( "$tmpdir/$filename" ));
+        	        	run \@flvcmd , '|' , \@ffmpegcmd , '|' , \@lamecmd;
+			} else {
+				pop ( @ffmpegcmd );
+				push ( @ffmpegcmd , ( "$tmpdir/$filename" ));
+        	        	run \@flvcmd , '|' , \@ffmpegcmd ;
+			}
 			$runtot = $runtot + $chunk;
 			$counter = ++$counter;
 			$live_thread = threads->new(\&refreshFlv, $filename, $show, @stream);
