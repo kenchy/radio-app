@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-#get_radio V0.6
+#get_radio V0.7
 #works in all meaningful ways
 #Allows multiple searches and channels for program downloading
 #Caches the XML for the AOD pages so that the file is only pulled once
