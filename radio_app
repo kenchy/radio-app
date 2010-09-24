@@ -84,6 +84,8 @@ my $mply_proc  = 0;
 my $xscr_proc  = 0;
 my $pqiv_proc  = 0;
 my $Pic_Dir    = "/mnt/backup/pictures";
+my $Title      = "Default Title String";
+my $DrtPID;
 my @gui_res;
 
 #These variables are pretty global??
@@ -103,7 +105,9 @@ GetOptions (
 	'play'		=> \$play,
 	'gui'		=> \$Gui,
 	'help|dump'	=> \$DmpChn,
-	'slide'		=> \$Pic_Dir
+	'slide'		=> \$Pic_Dir,
+	'dumppid=s'	=> \$DrtPID,
+	'title=s'	=> \$Title
 ) or die "Incorrect usage use --help for assistance.\n";
 
 
@@ -826,6 +830,18 @@ if ( $Gui  == 1 ) {
 } elsif ( $live == 1 ) {
 	#print "\nDEBUG:: in main streamStation $SelChn[0] \n";
 	streamStation ( $SelChn[0] );
+} elsif ( length($DrtPID) > 0 ) {
+	#Attempt to dump the pid, use the title if it is a title
+	if ( isitaPID($DrtPID) == 1 ) {
+		my @Results = ();
+		my @TmpArray =();
+		print "it is a PID $DrtPID and the title is $Title";
+		@TmpArray = ($DrtPID,$Title);
+		@Results = ([@TmpArray]);
+		downloadPID (@Results);
+	} else {
+		print "it is not a pid";
+	}
 } else {
 	my @Results = ();
 	foreach my $look (@SelSer) {
