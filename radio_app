@@ -163,19 +163,25 @@ sub processMediaSelector {
 	# read XML file
 	my $ua = LWP::UserAgent->new;
 	my $raw = $ua->request(HTTP::Request->new( GET => $SelBase . $MedPid ) );
-	my $data = $xml->XMLin($raw->content);
+	my $data = $xml->XMLin(($raw->content), forcearray => [ 'media' ]);
 	my $media_index = 0;
 	my $serv_index = 0;
+	print "DEBUG:: number of medias $#{ $data->{media} } \n";
 	until ( ( $data->{media}[$media_index]->{service} eq $StrTyp[$serv_index] ) or ( defined($data->{media}[$media_index]->{service}) == 0 ) ) {
-		print "DEBUG:: return service is $data->{media}[$media_index]->{service}\n";
-		print "DEBUG:: match  service is $StrTyp[$serv_index]\n";
+		#print "DEBUG:: return service is $data->{media}[$media_index]->{service}\n";
+		#print "DEBUG:: match  service is $StrTyp[$serv_index]\n";
 		$media_index = 0;
-		until ( ( $data->{media}[$media_index]->{service} eq $StrTyp[$serv_index] ) or ( $serv_index >= $#StrTyp ) ) {
-               	++$media_index;
+		#until ( ( $data->{media}[$media_index]->{service} eq $StrTyp[$serv_index] ) or ( $serv_index >= $#StrTyp ) ) {
+		until ( ( $data->{media}[$media_index]->{service} eq $StrTyp[$serv_index] ) or ( $media_index >= $#{ $data->{media} } ) ) {
+               		++$media_index;
+			#print "DEBUG:: media index $media_index \n";
+			#sleep 2;
 		}
 		if ( $data->{media}[$media_index]->{service} ne $StrTyp[$serv_index] ) {
+			#print "DEBUG:: serv index $serv_index \n";
                 	++$serv_index;
         	}
+		#sleep 2;
 	}
 	#print "DEBUG:: which stream $StrTyp[$serv_index] \n";
 	#print "DEBUG:: server should be $data->{media}[$media_index]->{connection}->{server}\n";
@@ -313,7 +319,7 @@ sub stopStation {
 
 sub downloadPID {
 	my @shows  = @_;
-	my @stream = ( "iplayer_uk_stream_mp3" , "iplayer_intl_stream_mp3" , "iplayer_intl_stream_mp3_lo" );
+	my @stream = ( "xxxxx_test_uk_stream" , "iplayer_uk_stream_mp3" , "iplayer_intl_stream_mp3" , "iplayer_intl_stream_mp3_lo" );
 	#my @stream = ( "iplayer_uk_stream_mp3" );
 	#print Dumper (@shows);
 	my $show_index = 0;
