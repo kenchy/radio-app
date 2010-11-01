@@ -241,7 +241,6 @@ sub streamStation {
                 	push ( @lamecmd , ( '/usr/bin/lame' , '--quiet' , '-a' , '-q', '7' , '--resample' , '44.1' , '-b' , '32' , '-' , "dummyname" ));
 			$file_suffix = "mp3";
 		} else {
-                	push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' ,'quiet' , '-i' , '-' , '-v' , '0' , '-vn' , '-metadata' , 'mimeType=audio/aac' , '-acodec' , 'copy' , 'dummyname' ));
 			$file_suffix = "m4a";
 		}
 	
@@ -263,16 +262,7 @@ sub streamStation {
 		my $live_thread = 0;
 		while ( $runtot < $stop ) {
 			my $filename = "$filetime\_$counter\_$title.$file_suffix";
-			if ( $live_thread != 0 ) {
-				my $attribs = $live_thread->join;
-				%attribs = %$attribs;
-				@flvcmd = ();
-				push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}?$attribs{authString}&aifp=v001" , '--live' , '--flv' , '-' , '--stop' , "$chunk" ));
-			}
-			print "RETURNED ATTRIBS HERE\n";
-			print "EXPIRES: $attribs{authExpires}\n";
-			print "STREAM:  $attribs{stream}\n";
-			print "IDENT:   $attribs{identifier}\n";
+			my $flvname = "$filetime\_$counter\_$title.aac";
 			if ( ($stop - $runtot) < $chunk ) {
 				$chunk = $stop - $runtot;
 				pop ( @flvcmd );
@@ -283,13 +273,22 @@ sub streamStation {
 				push ( @lamecmd , ( "$tmpdir/$filename" ));
         	        	run \@flvcmd , '|' , \@ffmpegcmd , '|' , \@lamecmd;
 			} else {
-				pop ( @ffmpegcmd );
-				push ( @ffmpegcmd , ( "$tmpdir/$filename" ));
-        	        	run \@flvcmd , '|' , \@ffmpegcmd ;
+				$flvcmd[10] = "$tmpdir/$flvname";
+        	        	run \@flvcmd;
 			}
 			$runtot = $runtot + $chunk;
 			$counter = ++$counter;
-			$live_thread = threads->new(\&refreshFlv, $filename, $show, @stream);
+			if ( $live_thread != 0 ) {
+				my $attribs = $live_thread->join;
+				%attribs = %$attribs;
+				@flvcmd = ();
+				push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}?$attribs{authString}&aifp=v001" , '--live' , '--flv' , '-' , '--stop' , "$chunk" ));
+			}
+			#print "RETURNED ATTRIBS HERE\n";
+			print "EXPIRES: $attribs{authExpires}\n";
+			#print "STREAM:  $attribs{stream}\n";
+			#print "IDENT:   $attribs{identifier}\n";
+			$live_thread = threads->create(\&refreshFlv, $filename, $flvname, $rawlive, $show, @stream);	
 		}
 		if ($live_thread != 0 ){
 			$live_thread->join;
@@ -299,10 +298,20 @@ sub streamStation {
 
 sub refreshFlv {
 	my $tfile    = shift;
+	my $tflv     = shift;
+	my $traw     = shift;
 	my $tchan    = shift;
 	my @tstreams = @_;
-	my @mvcmd = ( '/bin/mv' , "$tmpdir/$tfile" , "$OutDir/$tfile" );
-	run \@mvcmd;
+	if ( $traw == 0 ) { 
+		my @mvcmd = ( '/bin/mv' , "$tmpdir/$tfile" , "$OutDir/$tfile" );
+		run \@mvcmd;
+	} else {
+		my @ffmpeg = ();
+        	push ( @ffmpeg , ( '/usr/bin/ffmpeg' , '-loglevel' ,'quiet' , '-i' , "$tmpdir/$tflv" , '-v' , '0' , '-vn' , '-metadata' , 'mimeType=audio/aac' , '-acodec' , 'copy' , "$OutDir/$tfile" ));
+		run \@ffmpeg;
+		my @rmcmd = ( '/bin/rm' , "$tmpdir/$tflv" );
+		run \@rmcmd;
+	}
 	my %tattribs = processMediaSelector ( $tchan , @tstreams );
 	#print Dumper %tattribs;
 	return \%tattribs;
