@@ -34,16 +34,17 @@ my $xml = new XML::Simple;
 #Some Vars
 #inoticoming doesn't work with a station name that starts with a number
 my %Channel = (
-		1  => [ "bbc_radio_one"       		   , "radio1"     , "Radio1" ],
-		2  => [ "bbc_radio_two"       	       	   , "radio2"     , "Radio2" ],
-		3  => [ "bbc_radio_three"     		   , "radio3"     , "Radio3" ],
-		4  => [ "bbc_radio_fourfm"      	   , "radio4"     , "Radio4" ],
-		5  => [ "bbc_radio_five_live" 		   , "fivelive"   , "R5live"  ],
-		6  => [ "bbc_6music"                       , "6music"     , "R6music" ],
-		7  => [ "bbc_7"               		   , "bbc7"       , "BBC7" ],
-		8  => [ "bbc_radio_five_live_sports_extra" , "sportsextra" , "R5LSX" ],
-		10 => [ "bbc_radio_wales_fm"  		   , "radiowales" , "R.Wales" ],
-		11 => [ "bbc_wm"         	           , "bbc_wm"     , "RadioWM" ],
+		1  => [ "bbc_radio_one"       		   , "radio1"        , "Radio1" ],
+		2  => [ "bbc_radio_two"       	       	   , "radio2"        , "Radio2" ],
+		3  => [ "bbc_radio_three"     		   , "radio3"        , "Radio3" ],
+		4  => [ "bbc_radio_fourfm"      	   , "radio4"        , "Radio4" ],
+		5  => [ "bbc_radio_five_live" 		   , "fivelive"      , "R5live"  ],
+		6  => [ "bbc_6music"                       , "6music"        , "R6music" ],
+		7  => [ "bbc_7"               		   , "bbc7"          , "BBC7" ],
+		8  => [ "bbc_radio_five_live_sports_extra" , "sportsextra"   , "R5LSX" ],
+                10 => [ "bbc_radio_wales_fm"               , "radiowales"    , "R.Wales" ],
+                11 => [ "bbc_radio_scotland_fm"            , "radioscotland" , "R.Scot" ],
+                20 => [ "bbc_wm"                           , "bbc_wm"        , "RadioWM" ],
 );
 
 my @SelChn     = ();
@@ -308,9 +309,13 @@ sub refreshFlv {
 	} else {
 		my @ffmpeg = ();
         	push ( @ffmpeg , ( '/usr/bin/ffmpeg' , '-loglevel' ,'quiet' , '-i' , "$tmpdir/$tflv" , '-v' , '0' , '-vn' , '-metadata' , 'mimeType=audio/aac' , '-acodec' , 'copy' , "$OutDir/$tfile" ));
-		run \@ffmpeg;
-		my @rmcmd = ( '/bin/rm' , "$tmpdir/$tflv" );
-		run \@rmcmd;
+		my $return;
+		$return = run \@ffmpeg;
+		#Only delete the original if there are no ffmpeg errors
+		if ( $return == 1 ){
+			my @rmcmd = ( '/bin/rm' , "$tmpdir/$tflv" );
+			run \@rmcmd;
+		}
 	}
 	my %tattribs = processMediaSelector ( $tchan , @tstreams );
 	#print Dumper %tattribs;
