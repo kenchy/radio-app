@@ -44,6 +44,7 @@ my %Channel = (
 		8  => [ "bbc_radio_five_live_sports_extra" , "sportsextra"   , "R5LSX" ],
                 10 => [ "bbc_radio_wales_fm"               , "radiowales"    , "R.Wales" ],
                 11 => [ "bbc_radio_scotland_fm"            , "radioscotland" , "R.Scot" ],
+                12 => [ "bbc_world_service"                , "worldservice"  , "BBC_WS" ],
                 20 => [ "bbc_wm"                           , "bbc_wm"        , "RadioWM" ],
 );
 
@@ -88,6 +89,7 @@ my $Pic_Dir    = "/mnt/backup/pictures";
 my $Title      = "Default Title String";
 my $DrtPID;
 my @gui_res;
+my $out_suffix;
 
 #These variables are pretty global??
 my (@flvcmd , @lamecmd ,@ffmpegcmd , @mp3spltcmd , @mplayercmd , @inoticmd , $PlayPath );
@@ -141,11 +143,11 @@ exit;
 sub isitaPID {
 	my $testpid = shift;
 	my $pidlth  = 8;
-	my $pidsrt  = 'b00';
+	my $pidsrtre  = '[pb]00';
 	if ( length($testpid) == $pidlth ) {
-		#print "DEBUG:: It might be a pid it's 8 characters\n";
-		if ( $testpid =~ m/^$pidsrt/ ) {
-			#print "DEBUG:: It might be a pid it starts with $pidsrt\n";
+		print "DEBUG:: It might be a pid it's 8 characters\n";
+		if ( $testpid =~ m/^$pidsrtre/ ) {
+			#print "DEBUG:: It might be a pid it starts with $pidsrtre\n";
 			return 1;
 		} else {
 			#print "DEBUG:: It not a PID";
@@ -168,6 +170,7 @@ sub processMediaSelector {
 	my $media_index = 0;
 	my $serv_index = 0;
 	print "DEBUG:: number of medias $#{ $data->{media} } \n";
+	#print Dumper ( $data );
 	until ( ( $data->{media}[$media_index]->{service} eq $StrTyp[$serv_index] ) or ( defined($data->{media}[$media_index]->{service}) == 0 ) ) {
 		#print "DEBUG:: return service is $data->{media}[$media_index]->{service}\n";
 		#print "DEBUG:: match  service is $StrTyp[$serv_index]\n";
@@ -220,7 +223,7 @@ sub streamStation {
 	my $filetime = strftime("%Y%m%d_%H%M", @localtime);
 	
 	#This locks it to the low bandwidth iplayer flash stream
-	my @stream = ( "iplayer_uk_stream_aac_rtmp_lo_live" , "iplayer_uk_stream_aac_rtmp_live" );
+	my @stream = ( "iplayer_uk_stream_aac_rtmp_lo_live" , "iplayer_uk_stream_aac_rtmp_live" , "iplayer_intl_stream_aac_rtmp_ws_live" );
 	#my @stream = ( "iplayer_uk_stream_aac_rtmp_live" , "iplayer_uk_stream_aac_rtmp_lo_live" );
 	my %attribs = processMediaSelector ( $show , @stream );
 	if ( $play == 1 ) {
@@ -333,7 +336,7 @@ sub stopStation {
 
 sub downloadPID {
 	my @shows  = @_;
-	my @stream = ( "xxxxx_test_uk_stream" , "iplayer_uk_stream_mp3" , "iplayer_intl_stream_mp3" , "iplayer_intl_stream_mp3_lo" );
+	my @stream = ( "iplayer_uk_stream_mp3" , "iplayer_intl_stream_mp3" , "iplayer_intl_stream_mp3_lo" , "iplayer_intl_stream_aac_ws_concrete" );
 	#my @stream = ( "iplayer_uk_stream_mp3" );
 	#print Dumper (@shows);
 	my $show_index = 0;
@@ -363,8 +366,13 @@ sub downloadPID {
 				run \@flvcmd;
 				#print Dumper(@flvcmd);
 				@ffmpegcmd = ();
-				push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , "$tmpdir/$title.$attribs{encoding}" , '-acodec' , 'copy' , "$OutDir/$title.$attribs{encoding}"  ));
-				#print Dumper(@ffmpegcmd);
+				#quick hack, if it's an aac output as m4a
+				if ( $attribs{encoding} =~ "aac" ) {	
+					$out_suffix = "m4a";
+				} else {
+					$out_suffix = "mp3";
+				}
+				push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , "$tmpdir/$title.$attribs{encoding}" , '-acodec' , 'copy' , "$OutDir/$title.$out_suffix"  ));
 				run \@ffmpegcmd;
                 		unlink "$tmpdir/$title.$attribs{encoding}";
 			}
