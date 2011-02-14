@@ -1,4 +1,4 @@
-radio_app  v0.9 README
+radio_app  v0.10 README
 
 A small app to download radio programs from the BBC iPlayer, using flvstreamer.
 
@@ -23,6 +23,8 @@ To list available channels
 To download a live stream which will convert from aac to mp3
 
 ./radio_app --channel 5 --end 30 --chunk 5 --live --outdir $HOME
+
+if flvstreamer crashes for whatever reason an additional chunk will be stuck on the end to compensate
 
 To download a live stream which will be aac in a mp4 container (v. low cpu)
 

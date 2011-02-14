@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-#get_radio V0.7
+#get_radio V0.10
 #works in all meaningful ways
 #Allows multiple searches and channels for program downloading
 #Caches the XML for the AOD pages so that the file is only pulled once
@@ -22,7 +22,7 @@ use Data::Dumper;
 use Switch;
 use HTTP::Request;
 use LWP::UserAgent;
-use IPC::Run qw( run start );
+use IPC::Run qw( run start pump );
 use File::Copy;
 use threads;
 use if defined $ENV{DISPLAY} , "Gtk2";
@@ -87,7 +87,7 @@ my $xscr_proc  = 0;
 my $pqiv_proc  = 0;
 my $Pic_Dir    = "/mnt/backup/pictures";
 my $Title      = "Default Title String";
-my $DrtPID;
+my $DrtPID = "";
 my @gui_res;
 my $out_suffix;
 
@@ -210,6 +210,8 @@ sub processMediaSelector {
 sub streamStation {
 	#print Dumper ( @_ );
 	my $chan  = shift;
+  	my $starttime=time();
+        my $finishtime=($starttime + (( $stop - 3 ) * 60));
 	if ( $chan =~ /^[+-]?\d+$/ ) {
 		#print "DEBUG::channel $chan\n"
 	} else {
@@ -267,7 +269,7 @@ sub streamStation {
 		while ( $runtot < $stop ) {
 			my $filename = "$filetime\_$counter\_$title.$file_suffix";
 			my $flvname = "$filetime\_$counter\_$title.aac";
-			if ( ($stop - $runtot) < $chunk ) {
+			if ((($stop - $runtot) < $chunk )&&( time() > $finishtime)) {
 				$chunk = $stop - $runtot;
 				pop ( @flvcmd );
         			push ( @flvcmd , "$chunk"  );
@@ -275,7 +277,14 @@ sub streamStation {
 			if ( $rawlive == 0 ) {
 				pop ( @lamecmd );
 				push ( @lamecmd , ( "$tmpdir/$filename" ));
-        	        	run \@flvcmd , '|' , \@ffmpegcmd , '|' , \@lamecmd;
+        	        	my $test_harness = start \@flvcmd , '|' , \@ffmpegcmd , '|' , \@lamecmd;
+				pump $test_harness;
+				$test_harness->finish;
+				if ($test_harness->full_result(0) > 0) {
+					#we had an flv failure add a chunk on
+					$stop = $stop + $chunk;
+					print "FAILURE ALERT FAILURE ALERT \n";
+				}
 			} else {
 				$flvcmd[10] = "$tmpdir/$flvname";
         	        	run \@flvcmd;
@@ -848,11 +857,11 @@ sub startGui {
 @SelChn = split(/,/,join(',',@SelChn));
 #If its live we can bypass the search part and jump straight to the streaming
 
-#hack try to stop mplayer
-#system '/bin/echo stop > /tmp/mplayer.fifo';
-system '/usr/bin/killall mplayer';
 
 if ( $Gui  == 1 ) {
+	#hack try to stop mplayer
+	#system '/bin/echo stop > /tmp/mplayer.fifo';
+	system '/usr/bin/killall mplayer';
 	#print ("load gui");
 	startGui
 } elsif ( $live == 1 ) {
