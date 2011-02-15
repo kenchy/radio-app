@@ -888,6 +888,13 @@ if ( $Gui  == 1 ) {
 			#print "calling downloadPID \n";
 			downloadPID (@Results);
 		} else {
-			print Dumper (@Results);
+			if (@Results) {
+				print Dumper (@Results);
+				print "Do you want to download these shows (y/n)\n";
+				chomp ( my $res = <STDIN>);
+				if ( $res =~ /^y/i ) {
+					downloadPID (@Results);
+				}
+			}
 		}
 }
