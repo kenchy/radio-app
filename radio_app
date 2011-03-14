@@ -166,19 +166,19 @@ sub processMediaSelector {
 	# read XML file
 	my $ua = LWP::UserAgent->new;
 	my $raw = $ua->request(HTTP::Request->new( GET => $SelBase . $MedPid ) );
-	my $data = $xml->XMLin(($raw->content), forcearray => [ 'media' ]);
+	my $data = $xml->XMLin(($raw->content), forcearray => [ 'media','connection' ]);
 	my $media_index = 0;
 	my $serv_index = 0;
 	print "DEBUG:: number of medias $#{ $data->{media} } \n";
 	#print Dumper ( $data );
 	until ( ( $data->{media}[$media_index]->{service} eq $StrTyp[$serv_index] ) or ( defined($data->{media}[$media_index]->{service}) == 0 ) ) {
-		#print "DEBUG:: return service is $data->{media}[$media_index]->{service}\n";
-		#print "DEBUG:: match  service is $StrTyp[$serv_index]\n";
+		print "DEBUG:: return service is $data->{media}[$media_index]->{service}\n";
+		print "DEBUG:: match  service is $StrTyp[$serv_index]\n";
 		$media_index = 0;
 		#until ( ( $data->{media}[$media_index]->{service} eq $StrTyp[$serv_index] ) or ( $serv_index >= $#StrTyp ) ) {
 		until ( ( $data->{media}[$media_index]->{service} eq $StrTyp[$serv_index] ) or ( $media_index >= $#{ $data->{media} } ) ) {
                		++$media_index;
-			#print "DEBUG:: media index $media_index \n";
+			print "DEBUG:: media index $media_index \n";
 			#sleep 2;
 		}
 		if ( $data->{media}[$media_index]->{service} ne $StrTyp[$serv_index] ) {
@@ -187,20 +187,26 @@ sub processMediaSelector {
         	}
 		#sleep 2;
 	}
-	#print "DEBUG:: which stream $StrTyp[$serv_index] \n";
+	#Right to do the lo lime light has to connections, look for the one that has protocol=rtmp
+	print "DEBUG:: which stream $StrTyp[$serv_index] \n";
+        my $connection_index = 0;
+	if ( $data->{media}[$media_index]->{connection}[$connection_index]->{protocol} ne "rtmp" ) {
+		++$connection_index;
+	}
 	#print "DEBUG:: server should be $data->{media}[$media_index]->{connection}->{server}\n";
 	#Initialise hash ....
 	my %mattribs;
-	my $fcsraw  = $ua->request(HTTP::Request->new( GET => "http://" . $data->{media}[$media_index]->{connection}->{server} . "/fcs/ident" ) );
+	my $fcsraw  = $ua->request(HTTP::Request->new( GET => "http://" . $data->{media}[$media_index]->{connection}[$connection_index]->{server} . "/fcs/ident" ) );
 	my $fcsdata = $xml->XMLin($fcsraw->content);
 	%mattribs = (
 		success     => 1,
-		authString  => $data->{media}[$media_index]->{connection}->{authString},
-		authExpires => $data->{media}[$media_index]->{connection}->{authExpires},
-		identifier  => $data->{media}[$media_index]->{connection}->{identifier},
+		authString  => $data->{media}[$media_index]->{connection}[$connection_index]->{authString},
+		authExpires => $data->{media}[$media_index]->{connection}[$connection_index]->{authExpires},
+		identifier  => $data->{media}[$media_index]->{connection}[$connection_index]->{identifier},
 		encoding    => $data->{media}[$media_index]->{encoding},
-		server      => $data->{media}[$media_index]->{connection}->{server},
-		application => $data->{media}[$media_index]->{connection}->{application},
+		server      => $data->{media}[$media_index]->{connection}[$connection_index]->{server},
+		application => $data->{media}[$media_index]->{connection}[$connection_index]->{application},
+		kind	    => $data->{media}[$media_index]->{connection}[$connection_index]->{kind},
 		ip	    => $fcsdata->{ip},
 		stream	    => $StrTyp[$serv_index],
 	);
@@ -345,8 +351,8 @@ sub stopStation {
 
 sub downloadPID {
 	my @shows  = @_;
-	my @stream = ( "iplayer_uk_stream_mp3" , "iplayer_intl_stream_mp3" , "iplayer_intl_stream_mp3_lo" , "iplayer_intl_stream_aac_ws_concrete" );
-	#my @stream = ( "iplayer_uk_stream_mp3" );
+	my @stream = ( "iplayer_uk_stream_mp3" , "iplayer_intl_stream_mp3" , "iplayer_intl_stream_mp3_lo" , "iplayer_uk_stream_aac_rtmp_lo_concrete" , "iplayer_intl_stream_aac_ws_concrete" , "iplayer_uk_stream_aac_rtmp_concrete" );
+	#my @stream = ( "iplayer_uk_stream_aac_rtmp_lo_concrete" );
 	#print Dumper (@shows);
 	my $show_index = 0;
 	my %attribs;
@@ -359,12 +365,19 @@ sub downloadPID {
 		#print "DEBUG:: show pid $shows[$show_index][0] , stream id $stream[$stream_index]\n";
 		my %attribs = processMediaSelector ( $shows[$show_index][0] , @stream );
 		#Check if file exists and don't download if it does
-		if ( -e "$OutDir/$title.$attribs{encoding}" ) {
-			print "File $OutDir/$title.$attribs{encoding} Exists Do Not Download!!\n";
+		#hack to catch m4a.....
+		if ( ( -e "$OutDir/$title.$attribs{encoding}"  ) or ( -e "$OutDir/$title.m4a" ) ) {
+			print "File $OutDir/$title.$attribs{encoding} or $OutDir/$title.m4a Exists Do Not Download!!\n";
 		} else {
 			#print "will now download \n";
 			@flvcmd = ();
-        		push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '--resume' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/ondemand" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/ondemand?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}" ));
+			if ( $attribs{kind} eq "akamai" ) {
+        			#push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '--resume' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/ondemand" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/ondemand?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}" ));
+        			push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '--resume' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}" ));
+			} else {
+        			push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '--protocol' , '0', '--resume' , '--host' , "$attribs{server}" , '-a' , "$attribs{application}?$attribs{authString}" , '-y' , "$attribs{identifier}" ));
+			}
+		
 			if ( $play == 1 ) {
 				@mplayercmd = ();
 				push ( @mplayercmd , ( '/usr/bin/mplayer' , -novideo , '-' , '-input' , 'file=/tmp/mplayer.fifo' , '-cache' , '8192' ) );
@@ -378,10 +391,11 @@ sub downloadPID {
 				#quick hack, if it's an aac output as m4a
 				if ( $attribs{encoding} =~ "aac" ) {	
 					$out_suffix = "m4a";
+					push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , "$tmpdir/$title.$attribs{encoding}" , '-metadata' , 'mimeType=audio/aac' , '-acodec' , 'copy' , "$OutDir/$title.$out_suffix"  ));
 				} else {
 					$out_suffix = "mp3";
+					push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , "$tmpdir/$title.$attribs{encoding}" , '-acodec' , 'copy' , "$OutDir/$title.$out_suffix"  ));
 				}
-				push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , "$tmpdir/$title.$attribs{encoding}" , '-acodec' , 'copy' , "$OutDir/$title.$out_suffix"  ));
 				run \@ffmpegcmd;
                 		unlink "$tmpdir/$title.$attribs{encoding}";
 			}
