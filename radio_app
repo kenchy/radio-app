@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-#get_radio V0.12
+#get_radio V0.13
 #works in all meaningful ways
 #Allows multiple searches and channels for program downloading
 #Caches the XML for the AOD pages so that the file is only pulled once
@@ -59,6 +59,8 @@ my $rawlive    = 0;
 my $chunk      = 30;
 my $stop       = 180;
 my $play       = 0;
+my $skip       = 0;
+my $recode     = 0;
 my $get	       = 0;
 my $MaxPids    = 5;
 my $FlvPrt     = 1935;
@@ -110,7 +112,9 @@ GetOptions (
 	'help|dump'	=> \$DmpChn,
 	'slide'		=> \$Pic_Dir,
 	'dumppid=s'	=> \$DrtPID,
-	'title=s'	=> \$Title
+	'title=s'	=> \$Title,
+	'recode'	=> \$recode,
+	'skip=i'	=> \$skip
 ) or die "Incorrect usage use --help for assistance.\n";
 
 
@@ -134,7 +138,8 @@ print "default:   search in specified channels for search string(s)
 --since:   will result in only searching for files available in the last n hours
 --get:     fetch the files (needs flvstreamer and ffmpeg)
 --channel: comma seperated list of channels to search (--help for list)
---play:    attempt to play, does not seem to work (needs mplayer to not work)\n";
+--play:    attempt to play, does not seem to work (needs mplayer to not work)
+--skip:    send a -A option to flvstreamer num of seconds\n";
 
 print "\nUsage: $0 --gui 
 --gui:	   load gui for live radio streaming (accepts no other options).\n";
@@ -377,7 +382,11 @@ sub downloadPID {
 			} else {
         			push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '--protocol' , '0', '--resume' , '--host' , "$attribs{server}" , '-a' , "$attribs{application}?$attribs{authString}" , '-y' , "$attribs{identifier}" ));
 			}
-		
+			my $out_title = $title;
+			if ( $skip > 0 ) {
+				push ( @flvcmd , ( '-A' , "$skip" ));
+				$out_title = $title."_skipped_".$skip;
+			}
 			if ( $play == 1 ) {
 				@mplayercmd = ();
 				push ( @mplayercmd , ( '/usr/bin/mplayer' , -novideo , '-' , '-input' , 'file=/tmp/mplayer.fifo' , '-cache' , '8192' ) );
@@ -390,11 +399,16 @@ sub downloadPID {
 				@ffmpegcmd = ();
 				#quick hack, if it's an aac output as m4a
 				if ( $attribs{encoding} =~ "aac" ) {	
-					$out_suffix = "m4a";
-					push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , "$tmpdir/$title.$attribs{encoding}" , '-f' , 'mp4' , '-acodec' , 'copy' , '-vn' , "$OutDir/$title.$out_suffix"  ));
+					if ( $recode == 1 ) {
+						$out_suffix = "mp3";
+						push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , "$tmpdir/$title.$attribs{encoding}" , '-acodec' , 'libmp3lame' , '-ab' , '48k' , "$OutDir/$out_title.$out_suffix"  ));
+					} else { 
+						$out_suffix = "m4a";
+						push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , "$tmpdir/$title.$attribs{encoding}" , '-f' , 'mp4' , '-acodec' , 'copy' , '-vn' , "$OutDir/$out_title.$out_suffix"  ));
+					}
 				} else {
 					$out_suffix = "mp3";
-					push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , "$tmpdir/$title.$attribs{encoding}" , '-acodec' , 'copy' , "$OutDir/$title.$out_suffix"  ));
+					push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , "$tmpdir/$title.$attribs{encoding}" , '-acodec' , 'copy' , "$OutDir/$out_title.$out_suffix"  ));
 				}
 				run \@ffmpegcmd;
                 		unlink "$tmpdir/$title.$attribs{encoding}";
