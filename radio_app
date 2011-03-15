@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-#get_radio V0.13
+#get_radio V0.14
 #works in all meaningful ways
 #Allows multiple searches and channels for program downloading
 #Caches the XML for the AOD pages so that the file is only pulled once
@@ -61,11 +61,11 @@ my $stop       = 180;
 my $play       = 0;
 my $skip       = 0;
 my $recode     = 0;
+my $dirchunk    = 0;
 my $get	       = 0;
 my $MaxPids    = 5;
 my $FlvPrt     = 1935;
 my $Gui        = 0;
-
 my $true       = 1;
 my $false      = 0;
 my $vol_label;
@@ -114,6 +114,7 @@ GetOptions (
 	'dumppid=s'	=> \$DrtPID,
 	'title=s'	=> \$Title,
 	'recode'	=> \$recode,
+	'dirchunk'	=> \$dirchunk,
 	'skip=i'	=> \$skip
 ) or die "Incorrect usage use --help for assistance.\n";
 
@@ -177,13 +178,13 @@ sub processMediaSelector {
 	print "DEBUG:: number of medias $#{ $data->{media} } \n";
 	#print Dumper ( $data );
 	until ( ( $data->{media}[$media_index]->{service} eq $StrTyp[$serv_index] ) or ( defined($data->{media}[$media_index]->{service}) == 0 ) ) {
-		print "DEBUG:: return service is $data->{media}[$media_index]->{service}\n";
-		print "DEBUG:: match  service is $StrTyp[$serv_index]\n";
+		#print "DEBUG:: return service is $data->{media}[$media_index]->{service}\n";
+		#print "DEBUG:: match  service is $StrTyp[$serv_index]\n";
 		$media_index = 0;
 		#until ( ( $data->{media}[$media_index]->{service} eq $StrTyp[$serv_index] ) or ( $serv_index >= $#StrTyp ) ) {
 		until ( ( $data->{media}[$media_index]->{service} eq $StrTyp[$serv_index] ) or ( $media_index >= $#{ $data->{media} } ) ) {
                		++$media_index;
-			print "DEBUG:: media index $media_index \n";
+			#print "DEBUG:: media index $media_index \n";
 			#sleep 2;
 		}
 		if ( $data->{media}[$media_index]->{service} ne $StrTyp[$serv_index] ) {
@@ -193,7 +194,7 @@ sub processMediaSelector {
 		#sleep 2;
 	}
 	#Right to do the lo lime light has to connections, look for the one that has protocol=rtmp
-	print "DEBUG:: which stream $StrTyp[$serv_index] \n";
+	#print "DEBUG:: which stream $StrTyp[$serv_index] \n";
         my $connection_index = 0;
 	if ( $data->{media}[$media_index]->{connection}[$connection_index]->{protocol} ne "rtmp" ) {
 		++$connection_index;
@@ -362,6 +363,9 @@ sub downloadPID {
 	my $show_index = 0;
 	my %attribs;
 	until ( $show_index == ($#shows+1) ) {
+		my $duration = $shows[$show_index][4];
+		#check if we should chunk
+		print "DEBUG::Duration $duration\n";
 		#make the title safe
 		my $title = $shows[$show_index][1];
 		$title =~ tr/a-zA-Z0-9/_/c;
@@ -371,8 +375,9 @@ sub downloadPID {
 		my %attribs = processMediaSelector ( $shows[$show_index][0] , @stream );
 		#Check if file exists and don't download if it does
 		#hack to catch m4a.....
-		if ( ( -e "$OutDir/$title.$attribs{encoding}"  ) or ( -e "$OutDir/$title.m4a" ) ) {
-			print "File $OutDir/$title.$attribs{encoding} or $OutDir/$title.m4a Exists Do Not Download!!\n";
+		#if ( ( -e "$OutDir/$title.$attribs{encoding}"  ) or ( -e "$OutDir/$title.m4a" ) ) {
+		if ( ( -e "$OutDir/$title.mp3"  ) or ( -e "$OutDir/$title.m4a" ) or ( -e "$OutDir/$title" ) ) {
+			print "File $OutDir/$title.$attribs{encoding} or $OutDir/$title.m4a or $OutDir/$title Exists Do Not Download!!\n";
 		} else {
 			#print "will now download \n";
 			@flvcmd = ();
@@ -393,25 +398,66 @@ sub downloadPID {
 				push ( @flvcmd, '--flv' , '-' );
                 		$mply_proc = start \@flvcmd , '|' , \@mplayercmd;
 			} else {
-				push ( @flvcmd, '--flv' , "$tmpdir/$title.$attribs{encoding}" );
-				run \@flvcmd;
-				#print Dumper(@flvcmd);
-				@ffmpegcmd = ();
-				#quick hack, if it's an aac output as m4a
-				if ( $attribs{encoding} =~ "aac" ) {	
-					if ( $recode == 1 ) {
-						$out_suffix = "mp3";
-						push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , "$tmpdir/$title.$attribs{encoding}" , '-acodec' , 'libmp3lame' , '-ab' , '48k' , "$OutDir/$out_title.$out_suffix"  ));
-					} else { 
-						$out_suffix = "m4a";
-						push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , "$tmpdir/$title.$attribs{encoding}" , '-f' , 'mp4' , '-acodec' , 'copy' , '-vn' , "$OutDir/$out_title.$out_suffix"  ));
+				if ( $dirchunk == 1 ) {
+					mkdir "$OutDir/$title";
+					my $chnk = 1200;
+					my $chnkstrt = 0;
+					my $chnkfin = 0;
+					my $tmptitle;
+					my $chnkindex = 1;
+					until ( $chnkfin >= $duration ) {
+						$chnkfin  = $chnkstrt + $chnk;
+						$tmptitle = $chnkindex."_".$title;
+						#$tmptitle = $chnkstrt.$shows[$show_index][0];
+						push ( @flvcmd , ( '-A' , "$chnkstrt" , '-B' , "$chnkfin" , '--flv' , "$tmpdir/$tmptitle.$attribs{encoding}" ) );
+						#print Dumper (@flvcmd);
+						run \@flvcmd;
+						@ffmpegcmd = ();
+						#quick hack, if it's an aac output as m4a
+						if ( $attribs{encoding} =~ "aac" ) {	
+							if ( $recode == 1 ) {
+								$out_suffix = "mp3";
+								push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , "$tmpdir/$tmptitle.$attribs{encoding}" , '-acodec' , 'libmp3lame' , '-ab' , '48k' , "$OutDir/$out_title/$tmptitle.$out_suffix"  ));
+							} else { 	
+								$out_suffix = "m4a";
+								push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , "$tmpdir/$tmptitle.$attribs{encoding}" , '-f' , 'mp4' , '-acodec' , 'copy' , '-vn' , "$OutDir/$out_title/$tmptitle.$out_suffix"  ));
+							}
+						} else {
+							$out_suffix = "mp3";
+							push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , "$tmpdir/$title.$attribs{encoding}" , '-acodec' , 'copy' , "$OutDir/$out_title.$out_suffix"  ));
+						}
+						run \@ffmpegcmd;
+                				unlink "$tmpdir/$tmptitle.$attribs{encoding}";
+						$chnkstrt = $chnkfin;
+						++$chnkindex;
+						pop (@flvcmd);
+						pop (@flvcmd);
+						pop (@flvcmd);
+						pop (@flvcmd);
+						pop (@flvcmd);
+						pop (@flvcmd);
 					}
 				} else {
-					$out_suffix = "mp3";
-					push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , "$tmpdir/$title.$attribs{encoding}" , '-acodec' , 'copy' , "$OutDir/$out_title.$out_suffix"  ));
+					push ( @flvcmd, '--flv' , "$tmpdir/$title.$attribs{encoding}" );
+					run \@flvcmd;
+					#print Dumper(@flvcmd);
+					@ffmpegcmd = ();
+					#quick hack, if it's an aac output as m4a
+					if ( $attribs{encoding} =~ "aac" ) {	
+						if ( $recode == 1 ) {
+							$out_suffix = "mp3";
+							push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , "$tmpdir/$title.$attribs{encoding}" , '-acodec' , 'libmp3lame' , '-ab' , '48k' , "$OutDir/$out_title.$out_suffix"  ));
+						} else { 
+							$out_suffix = "m4a";
+							push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , "$tmpdir/$title.$attribs{encoding}" , '-f' , 'mp4' , '-acodec' , 'copy' , '-vn' , "$OutDir/$out_title.$out_suffix"  ));
+						}
+					} else {
+						$out_suffix = "mp3";
+						push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , "$tmpdir/$title.$attribs{encoding}" , '-acodec' , 'copy' , "$OutDir/$out_title.$out_suffix"  ));
+					}
+					run \@ffmpegcmd;
+                			unlink "$tmpdir/$title.$attribs{encoding}";
 				}
-				run \@ffmpegcmd;
-                		unlink "$tmpdir/$title.$attribs{encoding}";
 			}
 		}
 		++$show_index;
@@ -447,7 +493,7 @@ sub searchShow {
 				if ( ( $added >= $now - ( $since * 3600 )) && ( $added <= $now )) {
 					my @TmpArray = ();
 					#print "DEBUG:: ( $$data->{entry}[$entry_index]->{title}[0] $$data->{entry}[$entry_index]->{broadcast}[0]->{version_pid}  $search \n";
-					@TmpArray = ($$data->{entry}[$entry_index]->{broadcast}[0]->{version_pid},$$data->{entry}[$entry_index]->{title}[0],$$data->{entry}[$entry_index]->{availability}[0]->{start},$Channel{$station}[2]);
+					@TmpArray = ($$data->{entry}[$entry_index]->{broadcast}[0]->{version_pid},$$data->{entry}[$entry_index]->{title}[0],$$data->{entry}[$entry_index]->{availability}[0]->{start},$Channel{$station}[2],$$data->{entry}[$entry_index]->{broadcast}[0]->{duration});
 					push ( @SelPid, ( [@TmpArray] ) );
 				}
 			}
