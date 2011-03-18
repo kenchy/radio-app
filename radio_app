@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-#get_radio V0.14
+#get_radio V0.15
 #works in all meaningful ways
 #Allows multiple searches and channels for program downloading
 #Caches the XML for the AOD pages so that the file is only pulled once
@@ -37,7 +37,7 @@ my %Channel = (
 		1  => [ "bbc_radio_one"       		   , "radio1"        , "Radio1" ],
 		2  => [ "bbc_radio_two"       	       	   , "radio2"        , "Radio2" ],
 		3  => [ "bbc_radio_three"     		   , "radio3"        , "Radio3" ],
-		4  => [ "bbc_radio_fourfm"      	   , "radio4"        , "Radio4" ],
+		4  => [ "bbc_radio_four"	      	   , "radio4"        , "Radio4" ],
 		5  => [ "bbc_radio_five_live" 		   , "fivelive"      , "R5live"  ],
 		6  => [ "bbc_6music"                       , "6music"        , "R6music" ],
 		7  => [ "bbc_7"               		   , "bbc7"          , "BBC7" ],
@@ -503,6 +503,64 @@ sub searchShow {
 	return @SelPid;
 }
 
+sub searchFeeds {
+        my @SelPid   = ();
+        #my $AodBase  = "http://www.bbc.co.uk/radio/aod/availability/";
+        my $FeedBase  = "http://feeds.bbc.co.uk/iplayer/";
+	my $FeedSuff  = "/list/limit/50";
+        my $pidBase  = "http://www.bbc.co.uk/iplayer/playlist/";
+        my $SelSuff  = ".xml";
+        my $search   = shift;
+        my $since    = shift;
+        my @channels = @_;
+        my $now      = time();
+        #print "search $search since $since channels";
+        #print Dumper (@channels);
+        #isitaPID ($search);
+        foreach my $station ( @channels ) {
+                if (!defined($Channel{$station}[3])) {
+                        # read XML file
+                        my $ua = LWP::UserAgent->new;
+			print $FeedBase . $Channel{$station}[0] . $FeedSuff . "\n";
+                        my $raw = $ua->request(HTTP::Request->new( GET => $FeedBase . $Channel{$station}[0] . $FeedSuff ) );
+                        #Push the XML out into the Channel hash, this saves exessive calls to the BBC website
+                        $Channel{$station}[3] = $xml->XMLin($raw->content, ForceArray => 'entry' );
+			#print Dumper ( $Channel{$station}[3] );
+                }
+                my $entry_index = 0;
+                my $data = \$Channel{$station}[3];
+                #print "DEBUG:: $$data->{entry}[$entry_index]->{broadcast}[0]->{version_pid}\n";
+                until ( defined($$data->{entry}[$entry_index]->{id}[0]) == 0 ) {
+			#need the broadcast pid... get it here
+			my @id = split(/:/, $$data->{entry}[$entry_index]->{id}[0]);
+			#print "DEBUG:: $id[3]\n";
+			#print Dumper ( $$data->{entry}[$entry_index]->{content}->{content} );
+			#print Dumper ( $$data->{entry}[$entry_index]->{title}[0]->{content} );
+			#print "$$data->{entry}[$entry_index]->{updated}[0] \n" ;
+                        if (( $$data->{entry}[$entry_index]->{title}[0]->{content} =~ /$search/i ) || ( $id[3] eq $search )) {
+				#print Dumper ( $$data->{entry}[$entry_index]->{title}[0]->{content} );
+				#print Dumper ( $$data->{entry}[$entry_index]->{updated}[0] );
+                                my $added = str2time($$data->{entry}[$entry_index]->{updated}[0]);
+                                if ( ( $added >= $now - ( $since * 3600 )) && ( $added <= $now )) {
+                        		my $progua = LWP::UserAgent->new;
+					my $prograw = $progua->request(HTTP::Request->new( GET => $pidBase . $id[3] ) );
+					my $progdata = $xml->XMLin($prograw->content, ForceArray => 'entry' );
+					#print Dumper ( $progdata );
+					#print Dumper ( $$progdata->{item}[0]->{duration} );
+					#print Dumper ( $progdata->{item});
+                                        my @TmpArray = ();
+                                        #print "DEBUG:: ( $$data->{entry}[$entry_index]->{title}[0] $$data->{entry}[$entry_index]->{broadcast}[0]->{version_pid}  $search \n";
+                                        #@TmpArray = ($$data->{entry}[$entry_index]->{broadcast}[0]->{version_pid},$$data->{entry}[$entry_index]->{title}[0],$$data->{entry}[$entry_index]->{availability}[0]->{start},$Channel{$station}[2],$$data->{entry}[$entry_index]->{broadcast}[0]->{duration});
+                                        @TmpArray = ($progdata->{item}[0]->{identifier},$$data->{entry}[$entry_index]->{title}[0]->{content},$$data->{entry}[$entry_index]->{updated}[0],$Channel{$station}[2],$progdata->{item}[0]->{duration},$progdata->{summary}[0], $id[3] );
+                                        push ( @SelPid, ( [@TmpArray] ) );
+                                }
+                        }
+                        ++$entry_index;
+        	}
+	}
+        return @SelPid;
+}
+
 sub getvol {
 	my $out;
 	my @amcmd = ('/usr/bin/amixer' , 'get' , 'Master' );
@@ -956,7 +1014,7 @@ if ( $Gui  == 1 ) {
 } else {
 	my @Results = ();
 	foreach my $look (@SelSer) {
-		push ( @Results  , (searchShow ( $look , $SelSin , @SelChn )));
+		push ( @Results  , (searchFeeds ( $look , $SelSin , @SelChn )));
 	}
 		if ( $get == 1 ) {
 			#print "calling downloadPID \n";
