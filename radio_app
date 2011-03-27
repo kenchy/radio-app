@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-#get_radio V0.16
+#get_radio V0.17
 #works in all meaningful ways
 #Allows multiple searches and channels for program downloading
 #Caches the XML for the AOD pages so that the file is only pulled once
@@ -61,7 +61,8 @@ my $stop       = 180;
 my $play       = 0;
 my $skip       = 0;
 my $recode     = 0;
-my $dirchunk    = 0;
+my $dirchunk   = 0;
+my @getchunk   = ();
 my $get	       = 0;
 my $MaxPids    = 5;
 my $FlvPrt     = 1935;
@@ -115,6 +116,7 @@ GetOptions (
 	'title=s'	=> \$Title,
 	'recode'	=> \$recode,
 	'dirchunk'	=> \$dirchunk,
+	'getchunk=s'	=> \@getchunk,
 	'skip=i'	=> \$skip
 ) or die "Incorrect usage use --help for assistance.\n";
 
@@ -140,7 +142,9 @@ print "default:   search in specified channels for search string(s)
 --get:     fetch the files (needs flvstreamer and ffmpeg)
 --channel: comma seperated list of channels to search (--help for list)
 --play:    attempt to play, does not seem to work (needs mplayer to not work)
---skip:    send a -A option to flvstreamer num of seconds\n";
+--skip:    send a -A option to flvstreamer num of seconds
+--dirchunk: Download program in 15 minute chunks into a directory
+--getchunk: comma seperated list of dirchunk chunks to get\n";
 
 print "\nUsage: $0 --gui 
 --gui:	   load gui for live radio streaming (accepts no other options).\n";
@@ -279,8 +283,9 @@ sub streamStation {
 		#initialise the thread variable
 		my $live_thread = 0;
 		while ( $runtot < $stop ) {
-			my $filename = "$filetime\_$counter\_$title.$file_suffix";
-			my $flvname = "$filetime\_$counter\_$title.aac";
+			my $padcount = sprintf("%02d", $counter);
+			my $filename = "$filetime\_$padcount\_$title.$file_suffix";
+			my $flvname = "$filetime\_$padcount\_$title.aac";
 			if ((($stop - $runtot) < $chunk )&&( time() > $finishtime)) {
 				$chunk = $stop - $runtot;
 				pop ( @flvcmd );
@@ -376,7 +381,7 @@ sub downloadPID {
 		#Check if file exists and don't download if it does
 		#hack to catch m4a.....
 		#if ( ( -e "$OutDir/$title.$attribs{encoding}"  ) or ( -e "$OutDir/$title.m4a" ) ) {
-		if ( ( -e "$OutDir/$title.mp3"  ) or ( -e "$OutDir/$title.m4a" ) or ( -e "$OutDir/$title" ) ) {
+		if ( ( -e "$OutDir/$title.mp3"  ) or ( -e "$OutDir/$title.m4a" ) or (( -e "$OutDir/$title" ) && ( @getchunk == 0 ) ) ) {
 			print "File $OutDir/$title.$attribs{encoding} or $OutDir/$title.m4a or $OutDir/$title Exists Do Not Download!!\n";
 		} else {
 			#print "will now download \n";
@@ -402,6 +407,7 @@ sub downloadPID {
 				if ( $dirchunk == 1 ) {
 					mkdir "$OutDir/$title";
 					my $chnk = 900;
+					my $chnkindex = 1;
 					my $chnkstrt;
 					if ( $skip > 0 ) {
 						$chnkstrt = $skip;
@@ -410,9 +416,18 @@ sub downloadPID {
 					}
 					my $chnkfin = 0;
 					my $tmptitle;
-					my $chnkindex = 1;
 					until ( $chnkfin >= $duration ) {
+						if (@getchunk != 0) {
+							@getchunk = split(/,/,join(',',@getchunk));
+							$chnkstrt = $chnk * ($getchunk[0] - 1);
+							$chnkindex = $getchunk[0];
+							shift @getchunk;
+							if (@getchunk == 0) {
+								$duration = $chnkstrt + $chnk ;
+							}
+						}
 						$chnkfin  = $chnkstrt + $chnk;
+						print "DEBUG::start $chnkstrt finish $chnkfin index $chnkindex duration $duration"; 
 						$tmptitle = sprintf("%02d", $chnkindex)."_".$title;
 						#$tmptitle = $chnkstrt.$shows[$show_index][0];
 						push ( @flvcmd , ( '-A' , "$chnkstrt" , '-B' , "$chnkfin" , '--flv' , "$tmpdir/$tmptitle.$attribs{encoding}" ) );
