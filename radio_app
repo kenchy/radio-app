@@ -388,7 +388,8 @@ sub downloadPID {
         			push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '--protocol' , '0', '--resume' , '--host' , "$attribs{server}" , '-a' , "$attribs{application}?$attribs{authString}" , '-y' , "$attribs{identifier}" ));
 			}
 			my $out_title = $title;
-			if ( $skip > 0 ) {
+			if (( $skip > 0 ) && ( $dirchunk == 0 )) {
+				#this copes with skip if not dir chunking, incorporate skip into dirchunk section
 				push ( @flvcmd , ( '-A' , "$skip" ));
 				$out_title = $title."_skipped_".$skip;
 			}
@@ -400,14 +401,19 @@ sub downloadPID {
 			} else {
 				if ( $dirchunk == 1 ) {
 					mkdir "$OutDir/$title";
-					my $chnk = 1200;
-					my $chnkstrt = 0;
+					my $chnk = 900;
+					my $chnkstrt;
+					if ( $skip > 0 ) {
+						$chnkstrt = $skip;
+					} else {
+						$chnkstrt = 0;
+					}
 					my $chnkfin = 0;
 					my $tmptitle;
 					my $chnkindex = 1;
 					until ( $chnkfin >= $duration ) {
 						$chnkfin  = $chnkstrt + $chnk;
-						$tmptitle = $chnkindex."_".$title;
+						$tmptitle = sprintf("%02d", $chnkindex)."_".$title;
 						#$tmptitle = $chnkstrt.$shows[$show_index][0];
 						push ( @flvcmd , ( '-A' , "$chnkstrt" , '-B' , "$chnkfin" , '--flv' , "$tmpdir/$tmptitle.$attribs{encoding}" ) );
 						#print Dumper (@flvcmd);
@@ -507,7 +513,7 @@ sub searchFeeds {
         my @SelPid   = ();
         #my $AodBase  = "http://www.bbc.co.uk/radio/aod/availability/";
         my $FeedBase  = "http://feeds.bbc.co.uk/iplayer/";
-	my $FeedSuff  = "/list/limit/50";
+	my $FeedSuff  = "/list/";
         my $pidBase  = "http://www.bbc.co.uk/iplayer/playlist/";
         my $SelSuff  = ".xml";
         my $search   = shift;
