@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-#get_radio V0.17
+#get_radio V0.18
 #works in all meaningful ways
 #Allows multiple searches and channels for program downloading
 #Caches the XML for the AOD pages so that the file is only pulled once
@@ -498,15 +498,15 @@ sub searchShow {
 	#print Dumper (@channels); 
 	#isitaPID ($search);
 	foreach my $station ( @channels ) {
-		if (!defined($Channel{$station}[3])) {
+		if (!defined($Channel{$station}[4])) {
 			# read XML file
 			my $ua = LWP::UserAgent->new;
 			my $raw = $ua->request(HTTP::Request->new( GET => $AodBase . $Channel{$station}[1] . $SelSuff ) );
 			#Push the XML out into the Channel hash, this saves exessive calls to the BBC website
-			$Channel{$station}[3] = $xml->XMLin($raw->content, ForceArray => 'entry' );
+			$Channel{$station}[4] = $xml->XMLin($raw->content, ForceArray => 'entry' );
 		}
 		my $entry_index = 0;
-		my $data = \$Channel{$station}[3];
+		my $data = \$Channel{$station}[4];
 		#print "DEBUG:: $$data->{entry}[$entry_index]->{broadcast}[0]->{version_pid}\n";
 		until ( defined($$data->{entry}[$entry_index]->{broadcast}[0]->{version_pid}) == 0 ) {
 			if (( $$data->{entry}[$entry_index]->{title}[0] =~ /$search/i ) || ( $$data->{entry}[$entry_index]->{broadcast}[0]->{version_pid} eq $search )) {
@@ -1034,20 +1034,35 @@ if ( $Gui  == 1 ) {
 	}
 } else {
 	my @Results = ();
-	foreach my $look (@SelSer) {
+	my $res;
+	my $look;
+	#print Dumper (@SelSer);
+	foreach $look (@SelSer) {
 		push ( @Results  , (searchFeeds ( $look , $SelSin , @SelChn )));
+		#push ( @Results  , (searchShow ( $look , $SelSin , @SelChn )));
 	}
-		if ( $get == 1 ) {
-			#print "calling downloadPID \n";
-			downloadPID (@Results);
-		} else {
-			if (@Results) {
-				print Dumper (@Results);
-				print "Do you want to download these shows (y/n)\n";
-				chomp ( my $res = <STDIN>);
-				if ( $res =~ /^y/i ) {
-					downloadPID (@Results);
+		if (( @Results == 0 ) && ($get == 0)) {
+			print "No results search with AoD feeds? (y/n)\n";
+			chomp ($res = <STDIN>);
+			if ( $res =~ /^y/i ) {
+				#print "DEBUG:: getting to AoD\n";
+				#print Dumper (@SelSer);
+				foreach $look (@SelSer) {
+					print "look is $look selsin $SelSin \n";
+					print Dumper (@SelChn);
+					push ( @Results  , (searchShow ( $look , $SelSin , @SelChn )));
 				}
 			}
 		}
+		if ( (@Results) && ( $get == 1 ) ) {
+			#print "calling downloadPID \n";
+			downloadPID (@Results);
+		} elsif (@Results) {
+			print Dumper (@Results);
+			print "Do you want to download these shows (y/n)\n";
+			chomp ($res = <STDIN>);
+			if ( $res =~ /^y/i ) {
+				downloadPID (@Results);
+			}
+		} 
 }
