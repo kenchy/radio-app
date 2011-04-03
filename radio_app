@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-#get_radio V0.18
+#get_radio V0.19
 #works in all meaningful ways
 #Allows multiple searches and channels for program downloading
 #Caches the XML for the AOD pages so that the file is only pulled once
@@ -63,6 +63,7 @@ my $skip       = 0;
 my $recode     = 0;
 my $dirchunk   = 0;
 my @getchunk   = ();
+my $aod        = 0;
 my $get	       = 0;
 my $MaxPids    = 5;
 my $FlvPrt     = 1935;
@@ -117,6 +118,7 @@ GetOptions (
 	'recode'	=> \$recode,
 	'dirchunk'	=> \$dirchunk,
 	'getchunk=s'	=> \@getchunk,
+	'aod'		=> \$aod,
 	'skip=i'	=> \$skip
 ) or die "Incorrect usage use --help for assistance.\n";
 
@@ -134,7 +136,8 @@ print "--live:    download the specified channel, chunk will
 --rawlive: download the aac stream, and use ffmpeg to copy it to an mp4 container
            (very low CPU, ffmpeg seems to generate slightly iffy files)
 --play:    will play it (requires mplayer), chunk is ignored
---channel: a single integer refers to bb channels. see --help for a list.\n";
+--channel: a single integer refers to bb channels. see --help for a list.
+--aod:	   use the aod feed to search rather than feeds.bbc.co.uk.\n";
 
 print "\nUsage: $0 [--get] --channel x[,y,z] --since n --outdir <dir> --find <string> [--find <string> --find <string>]\n";
 print "default:   search in specified channels for search string(s)
@@ -168,6 +171,33 @@ sub isitaPID {
 		return 0;
 	}
 }
+
+sub checkBitRate {
+	my $bitrate  = shift; # e.g. 48000
+	my $length   = shift; # e.g. 900 seconds
+	my $filename = shift; # e.g. /home/paul/xxx.m4a
+
+	$bitrate = ( $bitrate * 1000 );
+
+	#calculate what size should be
+	#print "DEBUG:: filename $filename \n";
+	my $targetsize = (($bitrate * $length ) / 8 );
+	#print "DEBUG:: targetsize $targetsize \n";
+	#compare with what it is
+	my $actualsize = -s $filename;
+	#print "DEBUG:: actualsize $actualsize \n";
+	my $diff = abs( $targetsize - $actualsize );
+	#print "DEBUG:: diff $diff \n";
+	#return good or bad
+	if ( $diff > 400000 ) {
+		#print "DEBUG:: in fail \n";
+		return 1;
+	} else {
+		#print "DEBUG:: in success \n";
+		return 0;
+	}
+}
+
 
 sub processMediaSelector {
 	my $SelBase = "http://www.bbc.co.uk/mediaselector/4/mtis/stream/";
@@ -214,6 +244,7 @@ sub processMediaSelector {
 		authExpires => $data->{media}[$media_index]->{connection}[$connection_index]->{authExpires},
 		identifier  => $data->{media}[$media_index]->{connection}[$connection_index]->{identifier},
 		encoding    => $data->{media}[$media_index]->{encoding},
+		bitrate     => $data->{media}[$media_index]->{bitrate},
 		server      => $data->{media}[$media_index]->{connection}[$connection_index]->{server},
 		application => $data->{media}[$media_index]->{connection}[$connection_index]->{application},
 		kind	    => $data->{media}[$media_index]->{connection}[$connection_index]->{kind},
@@ -448,9 +479,13 @@ sub downloadPID {
 							push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , "$tmpdir/$title.$attribs{encoding}" , '-acodec' , 'copy' , "$OutDir/$out_title.$out_suffix"  ));
 						}
 						run \@ffmpegcmd;
-                				unlink "$tmpdir/$tmptitle.$attribs{encoding}";
-						$chnkstrt = $chnkfin;
-						++$chnkindex;
+						if ( checkBitRate ( $attribs{bitrate} , $chnk , "$OutDir/$out_title/$tmptitle.$out_suffix" ) == 0 ) {
+                					unlink "$tmpdir/$tmptitle.$attribs{encoding}";
+							$chnkstrt = $chnkfin;
+							++$chnkindex;
+						} else {
+							unlink "$OutDir/$out_title/$tmptitle.$out_suffix";
+						}
 						pop (@flvcmd);
 						pop (@flvcmd);
 						pop (@flvcmd);
@@ -1038,8 +1073,11 @@ if ( $Gui  == 1 ) {
 	my $look;
 	#print Dumper (@SelSer);
 	foreach $look (@SelSer) {
-		push ( @Results  , (searchFeeds ( $look , $SelSin , @SelChn )));
-		#push ( @Results  , (searchShow ( $look , $SelSin , @SelChn )));
+		if ( $aod == 0 ){
+			push ( @Results  , (searchFeeds ( $look , $SelSin , @SelChn )));
+		} else {
+			push ( @Results  , (searchShow ( $look , $SelSin , @SelChn )));
+		}
 	}
 		if (( @Results == 0 ) && ($get == 0)) {
 			print "No results search with AoD feeds? (y/n)\n";
