@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-#get_radio V0.19
+#get_radio V0.20
 #works in all meaningful ways
 #Allows multiple searches and channels for program downloading
 #Caches the XML for the AOD pages so that the file is only pulled once
@@ -62,7 +62,7 @@ my $stop       = 180;
 my $play       = 0;
 my $skip       = 0;
 my $recode     = 0;
-my $dirchunk   = 0;
+my $dirchunk   = 1;
 my @getchunk   = ();
 my $aod        = 0;
 my $get	       = 0;
@@ -231,7 +231,8 @@ sub processMediaSelector {
 	#Right to do the lo lime light has to connections, look for the one that has protocol=rtmp
 	#print "DEBUG:: which stream $StrTyp[$serv_index] \n";
         my $connection_index = 0;
-	if ( $data->{media}[$media_index]->{connection}[$connection_index]->{protocol} ne "rtmp" ) {
+	#print "DEBUG:: protocol $data->{media}[$media_index]->{connection}[$connection_index]->{protocol} :: supplier $data->{media}[$media_index]->{connection}[$connection_index]->{supplier} \n";
+	if ( ( $data->{media}[$media_index]->{connection}[$connection_index]->{protocol} ne "rtmp" ) &&  ( $data->{media}[$media_index]->{connection}[$connection_index]->{supplier} eq "mcs" ) ) {
 		++$connection_index;
 	}
 	#print "DEBUG:: server should be $data->{media}[$media_index]->{connection}->{server}\n";
@@ -394,7 +395,9 @@ sub stopStation {
 
 sub downloadPID {
 	my @shows  = @_;
-	my @stream = ( "iplayer_uk_stream_mp3" , "iplayer_intl_stream_mp3" , "iplayer_intl_stream_mp3_lo" , "iplayer_uk_stream_aac_rtmp_lo_concrete" , "iplayer_intl_stream_aac_ws_concrete" , "iplayer_uk_stream_aac_rtmp_concrete" );
+	#4_4_11 turned off mp3 streams, seen some evidence of the return of akamai, no longer rtmp??
+	#my @stream = ( "iplayer_uk_stream_mp3" , "iplayer_intl_stream_mp3" , "iplayer_intl_stream_mp3_lo" , "iplayer_uk_stream_aac_rtmp_lo_concrete" , "iplayer_intl_stream_aac_ws_concrete" , "iplayer_uk_stream_aac_rtmp_concrete" );
+	my @stream = ( "iplayer_uk_stream_aac_rtmp_lo_concrete" , "iplayer_intl_stream_aac_ws_concrete" , "iplayer_uk_stream_aac_rtmp_concrete" );
 	#my @stream = ( "iplayer_uk_stream_aac_rtmp_lo_concrete" );
 	#print Dumper (@shows);
 	my $show_index = 0;
@@ -402,7 +405,7 @@ sub downloadPID {
 	until ( $show_index == ($#shows+1) ) {
 		my $duration = $shows[$show_index][4];
 		#check if we should chunk
-		print "DEBUG::Duration $duration\n";
+		print "DEBUG:: Duration $duration\n";
 		#make the title safe
 		my $title = $shows[$show_index][1];
 		$title =~ tr/a-zA-Z0-9/_/c;
@@ -597,18 +600,23 @@ sub searchFeeds {
                         if (( $$data->{entry}[$entry_index]->{title}[0]->{content} =~ /$search/i ) || ( $id[3] eq $search )) {
 				#print Dumper ( $$data->{entry}[$entry_index]->{title}[0]->{content} );
 				#print Dumper ( $$data->{entry}[$entry_index]->{updated}[0] );
+				
                                 my $added = str2time($$data->{entry}[$entry_index]->{updated}[0]);
                                 if ( ( $added >= $now - ( $since * 3600 )) && ( $added <= $now )) {
                         		my $progua = LWP::UserAgent->new;
 					my $prograw = $progua->request(HTTP::Request->new( GET => $pidBase . $id[3] ) );
-					my $progdata = $xml->XMLin($prograw->content, ForceArray => 'entry' );
+					my $progdata = $xml->XMLin($prograw->content, ForceArray => 'entry', ForceArray => 'item' );
 					#print Dumper ( $progdata );
 					#print Dumper ( $$progdata->{item}[0]->{duration} );
 					#print Dumper ( $progdata->{item});
                                         my @TmpArray = ();
-                                        #print "DEBUG:: ( $$data->{entry}[$entry_index]->{title}[0] $$data->{entry}[$entry_index]->{broadcast}[0]->{version_pid}  $search \n";
-                                        #@TmpArray = ($$data->{entry}[$entry_index]->{broadcast}[0]->{version_pid},$$data->{entry}[$entry_index]->{title}[0],$$data->{entry}[$entry_index]->{availability}[0]->{start},$Channel{$station}[2],$$data->{entry}[$entry_index]->{broadcast}[0]->{duration});
-                                        @TmpArray = ($progdata->{item}[0]->{identifier},$$data->{entry}[$entry_index]->{title}[0]->{content},$$data->{entry}[$entry_index]->{updated}[0],$Channel{$station}[2],$progdata->{item}[0]->{duration},$progdata->{summary}[0], $id[3] );
+					#the item is like a playlist for example, radio prepend a warning if the show contains a competition
+					#we are looking for a kind of radioProgramme
+					my $itemindex=0;
+					until ($progdata->{item}[$itemindex]->{kind} eq "radioProgramme" ) {
+						$itemindex++
+					}
+                                        @TmpArray = ($progdata->{item}[$itemindex]->{identifier},$$data->{entry}[$entry_index]->{title}[0]->{content},$$data->{entry}[$entry_index]->{updated}[0],$Channel{$station}[2],$progdata->{item}[$itemindex]->{duration},$progdata->{summary}[0], $id[3] );
                                         push ( @SelPid, ( [@TmpArray] ) );
                                 }
                         }
