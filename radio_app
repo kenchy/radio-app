@@ -46,6 +46,7 @@ my %Channel = (
                 10 => [ "bbc_radio_wales_fm"               , "radiowales"    , "R.Wales" ],
                 11 => [ "bbc_radio_scotland_fm"            , "radioscotland" , "R.Scot" ],
                 12 => [ "bbc_world_service"                , "worldservice"  , "BBC_WS" ],
+                19 => [ "bbc_london"                       , "bbc_london"    , "BBCLondon" ],
                 20 => [ "bbc_wm"                           , "bbc_wm"        , "RadioWM" ],
 );
 
@@ -62,7 +63,7 @@ my $stop       = 180;
 my $play       = 0;
 my $skip       = 0;
 my $recode     = 0;
-my $dirchunk   = 1;
+my $dirchunk   = 0;
 my @getchunk   = ();
 my $aod        = 0;
 my $get	       = 0;
@@ -397,9 +398,9 @@ sub downloadPID {
 	my @shows  = @_;
 	#4_4_11 turned off mp3 streams, seen some evidence of the return of akamai, no longer rtmp??
 	#my @stream = ( "iplayer_uk_stream_mp3" , "iplayer_intl_stream_mp3" , "iplayer_intl_stream_mp3_lo" , "iplayer_uk_stream_aac_rtmp_lo_concrete" , "iplayer_intl_stream_aac_ws_concrete" , "iplayer_uk_stream_aac_rtmp_concrete" );
-	my @stream = ( "iplayer_uk_stream_aac_rtmp_lo_concrete" , "iplayer_intl_stream_aac_ws_concrete" , "iplayer_uk_stream_aac_rtmp_concrete" );
+	my @stream = ( "iplayer_intl_stream_mp3_lo" , "iplayer_uk_stream_aac_rtmp_lo_concrete" , "iplayer_intl_stream_aac_ws_concrete" , "iplayer_uk_stream_aac_rtmp_concrete" );
 	#my @stream = ( "iplayer_uk_stream_aac_rtmp_lo_concrete" );
-	#print Dumper (@shows);
+	print Dumper (@shows);
 	my $show_index = 0;
 	my %attribs;
 	until ( $show_index == ($#shows+1) ) {
@@ -422,8 +423,10 @@ sub downloadPID {
 			#print "will now download \n";
 			@flvcmd = ();
 			if ( $attribs{kind} eq "akamai" ) {
-        			#push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '--resume' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/ondemand" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/ondemand?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}" ));
-        			push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '--resume' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}" ));
+				print "DEBUG:: in the akamai";
+        			#push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '--protocol' , '0', '--resume' , '--host' , "$attribs{server}" , '-a' , "$attribs{application}?$attribs{authString}" , '-y' , "$attribs{identifier}" ));
+        			push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '--resume' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/ondemand" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/ondemand?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}" ));
+        			#push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '--resume' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}" ));
 			} else {
         			push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '--protocol' , '0', '--resume' , '--host' , "$attribs{server}" , '-a' , "$attribs{application}?$attribs{authString}" , '-y' , "$attribs{identifier}" ));
 			}
