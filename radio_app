@@ -399,7 +399,7 @@ sub downloadPID {
 	#4_4_11 turned off mp3 streams, seen some evidence of the return of akamai, no longer rtmp??
 	#my @stream = ( "iplayer_uk_stream_mp3" , "iplayer_intl_stream_mp3" , "iplayer_intl_stream_mp3_lo" , "iplayer_uk_stream_aac_rtmp_lo_concrete" , "iplayer_intl_stream_aac_ws_concrete" , "iplayer_uk_stream_aac_rtmp_concrete" );
 	my @stream = ( "iplayer_intl_stream_mp3_lo" , "iplayer_uk_stream_aac_rtmp_lo_concrete" , "iplayer_intl_stream_aac_ws_concrete" , "iplayer_uk_stream_aac_rtmp_concrete" );
-	#my @stream = ( "iplayer_uk_stream_aac_rtmp_lo_concrete" );
+	#my @stream = ( "iplayer_uk_stream_aac_rtmp_concrete" );
 	print Dumper (@shows);
 	my $show_index = 0;
 	my %attribs;
@@ -424,10 +424,9 @@ sub downloadPID {
 			@flvcmd = ();
 			if ( $attribs{kind} eq "akamai" ) {
 				print "DEBUG:: in the akamai";
-        			#push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '--protocol' , '0', '--resume' , '--host' , "$attribs{server}" , '-a' , "$attribs{application}?$attribs{authString}" , '-y' , "$attribs{identifier}" ));
         			push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '--resume' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/ondemand" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/ondemand?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}" ));
-        			#push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '--resume' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}" ));
 			} else {
+        			#push ( @flvcmd , ( '/usr/bin/flvstreamer' , '--protocol' , '0', '--resume' , '--host' , "$attribs{server}" , '-a' , "$attribs{application}?$attribs{authString}" , '-y' , "$attribs{identifier}" ));
         			push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '--protocol' , '0', '--resume' , '--host' , "$attribs{server}" , '-a' , "$attribs{application}?$attribs{authString}" , '-y' , "$attribs{identifier}" ));
 			}
 			my $out_title = $title;
@@ -492,6 +491,7 @@ sub downloadPID {
 							++$chnkindex;
 						} else {
 							unlink "$OutDir/$out_title/$tmptitle.$out_suffix";
+                					unlink "$tmpdir/$tmptitle.$attribs{encoding}";
 						}
 						pop (@flvcmd);
 						pop (@flvcmd);
