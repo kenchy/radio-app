@@ -46,6 +46,7 @@ my %Channel = (
                 10 => [ "bbc_radio_wales_fm"               , "radiowales"    , "R.Wales" ],
                 11 => [ "bbc_radio_scotland_fm"            , "radioscotland" , "R.Scot" ],
                 12 => [ "bbc_world_service"                , "worldservice"  , "BBC_WS" ],
+                18 => [ "bbc_radio_leeds"                  , "bbc_radio_leeds", "BBCLeeds" ],
                 19 => [ "bbc_london"                       , "bbc_london"    , "BBCLondon" ],
                 20 => [ "bbc_wm"                           , "bbc_wm"        , "RadioWM" ],
 );
