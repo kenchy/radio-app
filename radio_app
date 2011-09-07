@@ -176,15 +176,16 @@ sub isitaPID {
 }
 
 sub checkBitRate {
-	my $bitrate  = shift; # e.g. 48000
+	my $bitrate  = shift; # e.g. 48
 	my $length   = shift; # e.g. 900 seconds
 	my $filename = shift; # e.g. /home/paul/xxx.m4a
 
-	$bitrate = ( $bitrate * 1000 );
+	$bitrate = ( $bitrate * 1024 );
 
 	#calculate what size should be
-	#print "DEBUG:: filename $filename \n";
-	my $targetsize = (($bitrate * $length ) / 8 );
+	#print "DEBUG:: filename $filename bitrate $bitrate \n";
+	#add on a 5% muxing overhead
+	my $targetsize = ( 1.05 * (($bitrate * $length ) / 8) );
 	#print "DEBUG:: targetsize $targetsize \n";
 	#compare with what it is
 	my $actualsize = -s $filename;
@@ -192,7 +193,7 @@ sub checkBitRate {
 	my $diff = abs( $targetsize - $actualsize );
 	#print "DEBUG:: diff $diff \n";
 	#return good or bad
-	if ( $diff > 400000 ) {
+	if ( $diff > 250000 ) {
 		#print "DEBUG:: in fail \n";
 		return 1;
 	} else {
@@ -212,7 +213,7 @@ sub processMediaSelector {
 	my $data = $xml->XMLin(($raw->content), forcearray => [ 'media','connection' ]);
 	my $media_index = 0;
 	my $serv_index = 0;
-	print "DEBUG:: number of medias $#{ $data->{media} } \n";
+	#print "DEBUG:: number of medias $#{ $data->{media} } \n";
 	#print Dumper ( $data );
 	until ( ( $data->{media}[$media_index]->{service} eq $StrTyp[$serv_index] ) or ( defined($data->{media}[$media_index]->{service}) == 0 ) ) {
 		#print "DEBUG:: return service is $data->{media}[$media_index]->{service}\n";
@@ -242,6 +243,7 @@ sub processMediaSelector {
 	my %mattribs;
 	my $fcsraw  = $ua->request(HTTP::Request->new( GET => "http://" . $data->{media}[$media_index]->{connection}[$connection_index]->{server} . "/fcs/ident" ) );
 	my $fcsdata = $xml->XMLin($fcsraw->content);
+	#print "DEBUG:: bitrate $data->{media}[$media_index]->{bitrate}";
 	%mattribs = (
 		success     => 1,
 		authString  => $data->{media}[$media_index]->{connection}[$connection_index]->{authString},
@@ -401,13 +403,13 @@ sub downloadPID {
 	#my @stream = ( "iplayer_uk_stream_mp3" , "iplayer_intl_stream_mp3" , "iplayer_intl_stream_mp3_lo" , "iplayer_uk_stream_aac_rtmp_lo_concrete" , "iplayer_intl_stream_aac_ws_concrete" , "iplayer_uk_stream_aac_rtmp_concrete" );
 	my @stream = ( "iplayer_intl_stream_mp3_lo" , "iplayer_uk_stream_aac_rtmp_lo_concrete" , "iplayer_intl_stream_aac_ws_concrete" , "iplayer_uk_stream_aac_rtmp_concrete" );
 	#my @stream = ( "iplayer_uk_stream_aac_rtmp_concrete" );
-	print Dumper (@shows);
+	#print Dumper (@shows);
 	my $show_index = 0;
 	my %attribs;
 	until ( $show_index == ($#shows+1) ) {
 		my $duration = $shows[$show_index][4];
 		#check if we should chunk
-		print "DEBUG:: Duration $duration\n";
+		#print "DEBUG:: Duration $duration\n";
 		#make the title safe
 		my $title = $shows[$show_index][1];
 		$title =~ tr/a-zA-Z0-9/_/c;
@@ -465,7 +467,7 @@ sub downloadPID {
 							}
 						}
 						$chnkfin  = $chnkstrt + $chnk;
-						print "DEBUG::start $chnkstrt finish $chnkfin index $chnkindex duration $duration"; 
+						print "DEBUG::start $chnkstrt finish $chnkfin index $chnkindex duration $duration\n"; 
 						$tmptitle = sprintf("%02d", $chnkindex)."_".$title;
 						#$tmptitle = $chnkstrt.$shows[$show_index][0];
 						push ( @flvcmd , ( '-A' , "$chnkstrt" , '-B' , "$chnkfin" , '--flv' , "$tmpdir/$tmptitle.$attribs{encoding}" ) );
@@ -491,6 +493,7 @@ sub downloadPID {
 							$chnkstrt = $chnkfin;
 							++$chnkindex;
 						} else {
+							print "DEBUG:: The bitrate check has failed..\n";
 							unlink "$OutDir/$out_title/$tmptitle.$out_suffix";
                 					unlink "$tmpdir/$tmptitle.$attribs{encoding}";
 						}
