@@ -490,15 +490,15 @@ sub downloadPID {
 							push ( @ffmpegcmd , ( '/usr/bin/ffmpeg' , '-loglevel' , 'quiet' , '-i' , "$tmpdir/$title.$attribs{encoding}" , '-acodec' , 'copy' , "$OutDir/$out_title.$out_suffix"  ));
 						}
 						run \@ffmpegcmd;
-						if ( checkBitRate ( $attribs{bitrate} , $chnk , "$OutDir/$out_title/$tmptitle.$out_suffix" ) == 0 ) {
+						#if ( checkBitRate ( $attribs{bitrate} , $chnk , "$OutDir/$out_title/$tmptitle.$out_suffix" ) == 0 ) {
                 					unlink "$tmpdir/$tmptitle.$attribs{encoding}";
 							$chnkstrt = $chnkfin;
 							++$chnkindex;
-						} else {
-							print "DEBUG:: The bitrate check has failed..\n";
-							unlink "$OutDir/$out_title/$tmptitle.$out_suffix";
-                					unlink "$tmpdir/$tmptitle.$attribs{encoding}";
-						}
+						#} else {
+						#	print "DEBUG:: The bitrate check has failed..\n";
+						#	unlink "$OutDir/$out_title/$tmptitle.$out_suffix";
+                				#	unlink "$tmpdir/$tmptitle.$attribs{encoding}";
+						#}
 						pop (@flvcmd);
 						pop (@flvcmd);
 						pop (@flvcmd);
