@@ -1,4 +1,4 @@
-radio_app  v0.21 README
+radio_app  v0.24 README
 
 A small app to download radio programs from the BBC iPlayer, using flvstreamer.
 
@@ -56,3 +56,7 @@ In order to use my Joggler (see jogglerwiki.info) as an internet radio, I have a
 ./radio_app --gui
 
 It is written in perl gtk2 and it is probably too specific to be of too much use to anyone else, the modules will only load if there is a DISPLAY set on the machine where the app is run. If you don't want to load perl gtk2 and do have a DISPLAY, then I suggest you comment them out. Or tell me how to accomplish that.
+
+./radio_app --gui --slide
+
+launch the slideshow at start

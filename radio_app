@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-#get_radio V0.20
+#get_radio V0.24
 #works in all meaningful ways
 #Allows multiple searches and channels for program downloading
 #Caches the XML for the AOD pages so that the file is only pulled once
@@ -95,6 +95,7 @@ my $pqiv_proc  = 0;
 my $Pic_Dir    = "/mnt/backup/pictures";
 my $Title      = "Default Title String";
 my $DrtPID = "";
+my $slide = 0;
 my @gui_res;
 my $out_suffix;
 
@@ -115,14 +116,15 @@ GetOptions (
 	'play'		=> \$play,
 	'gui'		=> \$Gui,
 	'help|dump'	=> \$DmpChn,
-	'slide'		=> \$Pic_Dir,
+	'picdir'	=> \$Pic_Dir,
 	'dumppid=s'	=> \$DrtPID,
 	'title=s'	=> \$Title,
 	'recode'	=> \$recode,
 	'dirchunk'	=> \$dirchunk,
 	'getchunk=s'	=> \@getchunk,
 	'aod'		=> \$aod,
-	'skip=i'	=> \$skip
+	'skip=i'	=> \$skip,
+	'slide'		=> \$slide
 ) or die "Incorrect usage use --help for assistance.\n";
 
 
@@ -193,7 +195,7 @@ sub checkBitRate {
 	my $diff = abs( $targetsize - $actualsize );
 	#print "DEBUG:: diff $diff \n";
 	#return good or bad
-	if ( $diff > 250000 ) {
+	if ( $diff > 1000000 ) {
 		#print "DEBUG:: in fail \n";
 		return 1;
 	} else {
@@ -684,6 +686,10 @@ sub volume {
 	getvol;
 }
 
+sub power_off {
+	system ('dbus-send --system --print-reply --dest="org.freedesktop.ConsoleKit" /org/freedesktop/ConsoleKit/Manager org.freedesktop.ConsoleKit.Manager.Stop');
+}
+
 sub  ip_addr {
 	#my $junk = shift;
 	my $request = shift;
@@ -881,14 +887,14 @@ sub startGui {
 	$base_vbox->pack_start( $sub_hbox, $true, $true, 2 );
 
 	my $hbbox1 = new Gtk2::HButtonBox();
-	$hbbox1->set_border_width( 5 );
+	$hbbox1->set_border_width( 3 );
 	$hbbox1->set_layout( "edge" );
-	$hbbox1->set_spacing( 5 );
+	$hbbox1->set_spacing( 3 );
 
 	my $hbbox2 = new Gtk2::HButtonBox();
-	$hbbox2->set_border_width( 5 );
+	$hbbox2->set_border_width( 3 );
 	$hbbox2->set_layout( "edge" );
-	$hbbox2->set_spacing( 5 );
+	$hbbox2->set_spacing( 3 );
 
 	my $ss_button = new Gtk2::Button( "SlideShow" );
 	$ss_button->signal_connect('clicked' => \&start_slideshow );
@@ -926,6 +932,10 @@ sub startGui {
 	my $exit_button = new Gtk2::Button( "Exit" );
 	$exit_button->signal_connect('clicked' => sub { $base_win->destroy });
 	$hbbox2->add( $exit_button );
+	
+	my $off_button = new Gtk2::Button( "Off" );
+	$off_button->signal_connect('clicked' => \&power_off );
+	$hbbox2->add( $off_button );
 
 	$top_hbox->pack_start( $hbbox1, $true, $true, 2 );
 	$top_hbox->pack_start( $hbbox2, $true, $true, 2 );
@@ -1066,6 +1076,10 @@ if ( $Gui  == 1 ) {
 	#hack try to stop mplayer
 	#system '/bin/echo stop > /tmp/mplayer.fifo';
 	system '/usr/bin/killall mplayer';
+	if ( $slide == 1 ) {
+		$slide = 0 ;
+		start_slideshow;
+	}
 	#print ("load gui");
 	startGui
 } elsif ( $live == 1 ) {
