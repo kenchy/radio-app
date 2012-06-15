@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-#get_radio V0.24
+#get_radio V0.25
 #works in all meaningful ways
 #Allows multiple searches and channels for program downloading
 #Caches the XML for the AOD pages so that the file is only pulled once
@@ -280,7 +280,7 @@ sub streamStation {
 	my $filetime = strftime("%Y%m%d_%H%M", @localtime);
 	
 	#This locks it to the low bandwidth iplayer flash stream
-	my @stream = ( "iplayer_uk_stream_aac_rtmp_lo_live" , "iplayer_uk_stream_aac_rtmp_live" , "iplayer_intl_stream_aac_rtmp_ws_live" );
+	my @stream = ( "pc_stream_audio_simulcast_uk_a_lm_p004" , "pc_stream_audio_simulcast_uk_a_lm_p005" , "iplayer_uk_stream_aac_rtmp_lo_live" , "iplayer_uk_stream_aac_rtmp_live" , "iplayer_intl_stream_aac_rtmp_ws_live" );
 	#my @stream = ( "iplayer_uk_stream_aac_rtmp_live" , "iplayer_uk_stream_aac_rtmp_lo_live" );
 	my %attribs = processMediaSelector ( $show , @stream );
 	if ( $play == 1 ) {
