@@ -92,7 +92,7 @@ my $wlan_addr;
 my $mply_proc  = 0;
 my $xscr_proc  = 0;
 my $pqiv_proc  = 0;
-my $Pic_Dir    = "/mnt/backup/pictures";
+my $Pic_Dir    = "/home/paul/backup/Photos";
 my $Title      = "Default Title String";
 my $DrtPID = "";
 my $slide = 0;
@@ -316,15 +316,16 @@ sub streamStation {
 			$stop = 14400;
 			$chunk = 14400;
 		}
-			#Push the initial values into the flvstreamed. This will be periodically refreshed...
-			@flvcmd = ();
-			push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}?$attribs{authString}&aifp=v001" , '--live' , '--flv' , '-' , '--stop' , "$chunk" ));
 		#initialise the thread variable
 		my $live_thread = 0;
 		while ( $runtot < $stop ) {
 			my $padcount = sprintf("%02d", $counter);
 			my $filename = "$filetime\_$padcount\_$title.$file_suffix";
 			my $flvname = "$filetime\_$padcount\_$title.aac";
+			my %attribs = processMediaSelector ( $show , @stream );
+			#print Dumper %attribs;
+			@flvcmd = ();
+			push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}?$attribs{authString}&aifp=v001" , '--live' , '--flv' , '-' , '--stop' , "$chunk" ));
 			if ((($stop - $runtot) < $chunk )&&( time() > $finishtime)) {
 				$chunk = $stop - $runtot;
 				pop ( @flvcmd );
@@ -332,7 +333,8 @@ sub streamStation {
 			}
 			if ( $rawlive == 0 ) {
 				pop ( @lamecmd );
-				push ( @lamecmd , ( "$tmpdir/$filename" ));
+				#push ( @lamecmd , ( "$tmpdir/$filename" ));
+				push ( @lamecmd , ( "$OutDir/$filename" ));
         	        	my $test_harness = start \@flvcmd , '|' , \@ffmpegcmd , '|' , \@lamecmd;
 				pump $test_harness;
 				$test_harness->finish;
@@ -347,17 +349,11 @@ sub streamStation {
 			}
 			$runtot = $runtot + $chunk;
 			$counter = ++$counter;
-			if ( $live_thread != 0 ) {
-				my $attribs = $live_thread->join;
-				%attribs = %$attribs;
-				@flvcmd = ();
-				push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}?$attribs{authString}&aifp=v001" , '--live' , '--flv' , '-' , '--stop' , "$chunk" ));
-			}
 			#print "RETURNED ATTRIBS HERE\n";
 			print "EXPIRES: $attribs{authExpires}\n";
 			#print "STREAM:  $attribs{stream}\n";
 			#print "IDENT:   $attribs{identifier}\n";
-			$live_thread = threads->create(\&refreshFlv, $filename, $flvname, $rawlive, $show, @stream);	
+			$live_thread = threads->create(\&refreshFlv, $filename, $flvname, $rawlive);	
 		}
 		if ($live_thread != 0 ){
 			$live_thread->join;
@@ -369,8 +365,8 @@ sub refreshFlv {
 	my $tfile    = shift;
 	my $tflv     = shift;
 	my $traw     = shift;
-	my $tchan    = shift;
-	my @tstreams = @_;
+	;my $tchan    = shift;
+	;my @tstreams = @_;
 	if ( $traw == 0 ) { 
 		my @mvcmd = ( '/bin/mv' , "$tmpdir/$tfile" , "$OutDir/$tfile" );
 		run \@mvcmd;
@@ -385,9 +381,9 @@ sub refreshFlv {
 			run \@rmcmd;
 		}
 	}
-	my %tattribs = processMediaSelector ( $tchan , @tstreams );
+	#my %tattribs = processMediaSelector ( $tchan , @tstreams );
 	#print Dumper %tattribs;
-	return \%tattribs;
+	#return \%tattribs;
 }
 
 sub stopStation {
@@ -403,7 +399,7 @@ sub downloadPID {
 	my @shows  = @_;
 	#4_4_11 turned off mp3 streams, seen some evidence of the return of akamai, no longer rtmp??
 	#my @stream = ( "iplayer_uk_stream_mp3" , "iplayer_intl_stream_mp3" , "iplayer_intl_stream_mp3_lo" , "iplayer_uk_stream_aac_rtmp_lo_concrete" , "iplayer_intl_stream_aac_ws_concrete" , "iplayer_uk_stream_aac_rtmp_concrete" );
-	my @stream = ( "iplayer_intl_stream_mp3_lo" , "iplayer_uk_stream_aac_rtmp_lo_concrete" , "iplayer_intl_stream_aac_ws_concrete" , "iplayer_uk_stream_aac_rtmp_concrete" );
+	my @stream = ( "iplayer_intl_stream_mp3_lo" , "iplayer_uk_stream_aac_rtmp_lo_concrete" , "iplayer_intl_stream_aac_ws_concrete" , "iplayer_uk_stream_aac_rtmp_concrete" , "iplayer_intl_stream_mp3" );
 	#my @stream = ( "iplayer_uk_stream_aac_rtmp_concrete" );
 	#print Dumper (@shows);
 	my $show_index = 0;
@@ -637,11 +633,13 @@ sub searchFeeds {
 
 sub getvol {
 	my $out;
+	#my @amcmd = ('/usr/bin/amixer' , '-D0' , 'get' , 'Master' );
 	my @amcmd = ('/usr/bin/amixer' , 'get' , 'Master' );
 	my @grcmd = ( '/bin/grep' , 'Front Left:' );
 	run ( \@amcmd , '|' , \@grcmd , '>' , \$out ); 
 	my @vol_array = split ( / +/ , $out );
-	#print Dumper ( @vol_array );
+	print Dumper ( @vol_array );
+	#$vol_label->set_label("Vol: ". substr($vol_array[4], 0, -3) . "/ 65");
 	$vol_label->set_label("Vol: ". $vol_array[4] . "/ 31");
 	if ( $vol_array[7]  =~ m/on/ ) {
 		$mute_button->set_label("Mute Off");
@@ -761,7 +759,8 @@ sub start_slideshow {
 	}
 	#set the backlight to max::
 	system('/bin/echo 0 > /sys/class/backlight/openframe-bl/bl_power');
-	my @pqivcmd = ( '/usr/bin/pqiv' , '-fsnnid' , '10' , "$Pic_Dir" ); 
+	#my @pqivcmd = ( '/usr/bin/pqiv' , '-fsnnid' , '10' , "$Pic_Dir" ); 
+	my @pqivcmd = ( '/home/paul/code/wrap_pqiv' , "$Pic_Dir" ); 
 	$pqiv_proc = start \@pqivcmd;
 	system ('/usr/bin/killall xscreensaver');
 	system ('/usr/bin/xset -dpms');
@@ -887,16 +886,17 @@ sub startGui {
 	$base_vbox->pack_start( $sub_hbox, $true, $true, 2 );
 
 	my $hbbox1 = new Gtk2::HButtonBox();
-	$hbbox1->set_border_width( 3 );
+	$hbbox1->set_border_width( 1 );
 	$hbbox1->set_layout( "edge" );
-	$hbbox1->set_spacing( 3 );
+	$hbbox1->set_spacing( 1 );
 
 	my $hbbox2 = new Gtk2::HButtonBox();
-	$hbbox2->set_border_width( 3 );
+	$hbbox2->set_border_width( 1 );
 	$hbbox2->set_layout( "edge" );
-	$hbbox2->set_spacing( 3 );
+	$hbbox2->set_spacing( 1 );
 
 	my $ss_button = new Gtk2::Button( "SlideShow" );
+	$ss_button->set_size_request(70, 60);
 	$ss_button->signal_connect('clicked' => \&start_slideshow );
 	$hbbox1->add( $ss_button );
 
@@ -912,6 +912,7 @@ sub startGui {
 
 
 	my $volup_button = new Gtk2::Button( "Vol Up" );
+	$volup_button->set_size_request(70, 60);
 	$volup_button->signal_connect('clicked' => \&volume , "up" );
 	$hbbox2->add( $volup_button );
 
@@ -962,15 +963,20 @@ sub startGui {
 	
 	my $left_vbox = new Gtk2::VBox( $false, 0 );
 	$left_vframe->add ($left_vbox);
+	my $scrolled_win = Gtk2::ScrolledWindow->new (undef, undef);
+	$scrolled_win->set_policy ('automatic', 'automatic');
+
 	$stn_slist = Gtk2::SimpleList->new  (
 		'ID'	  => 'int',
 		'Name'	  => 'text',
         );
+
+	$scrolled_win->add($stn_slist);
 	foreach my $stn ( sort {$a <=> $b} ( keys %Channel )) {
 		#print "DEBUG:: $stn $Channel{$stn}[2] \n";
 		push  (@{$stn_slist->{data}} , ( [$stn, $Channel{$stn}[2]] ));
 	}
-        $left_vbox->pack_start($stn_slist, $true, $true, 1 );
+        $left_vbox->pack_start($scrolled_win, $true, $true, 1 );
 	
 	$entry = Gtk2::Entry->new;
 	$sr_button= Gtk2::Button->new( "Search" );
@@ -1014,6 +1020,7 @@ sub startGui {
 	$choose_button->set_width_chars(10);
 
 	my $kb_button= Gtk2::Button->new( "Open Keyboard" );
+	$kb_button->set_size_request(70, 40);
 	$kb_button->signal_connect('clicked' => \&keyboard_control);
 
 	my $pp_button= Gtk2::Button->new( "Pause/Cont." );
@@ -1040,10 +1047,10 @@ sub startGui {
 
 
 	my $right_vbbox = new Gtk2::VButtonBox();
-	$right_vbbox->set_border_width( 5 );
+	$right_vbbox->set_border_width( 2 );
 	$right_vframe->add( $right_vbbox );
 	$right_vbbox->set_layout( "start" );
-	$right_vbbox->set_spacing( 10 );
+	$right_vbbox->set_spacing( 5 );
 	my $wlan_label = new Gtk2::Label ( "wlan0 IP Address:" );
 	$right_vbbox->add( $wlan_label );
 	my $wlan_ip = ip_addr 'wlan0';
