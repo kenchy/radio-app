@@ -37,7 +37,7 @@ my %Channel = (
 		1  => [ "bbc_radio_one"       		   , "radio1"        , "Radio1" ],
 		2  => [ "bbc_radio_two"       	       	   , "radio2"        , "Radio2" ],
 		3  => [ "bbc_radio_three"     		   , "radio3"        , "Radio3" ],
-		4  => [ "bbc_radio_four"	      	   , "radio4"        , "Radio4" ],
+		4  => [ "bbc_radio_fourfm"	      	   , "radio4"        , "Radio4" ],
 		5  => [ "bbc_radio_five_live" 		   , "fivelive"      , "R5live"  ],
 		6  => [ "bbc_6music"                       , "6music"        , "R6music" ],
 		7  => [ "bbc_7"               		   , "bbc7"          , "BBC7" ],
@@ -368,8 +368,9 @@ sub refreshFlv {
 	;my $tchan    = shift;
 	;my @tstreams = @_;
 	if ( $traw == 0 ) { 
-		my @mvcmd = ( '/bin/mv' , "$tmpdir/$tfile" , "$OutDir/$tfile" );
-		run \@mvcmd;
+		print "DEBUG:: Used to mv the tmp file here";
+		#my @mvcmd = ( '/bin/mv' , "$tmpdir/$tfile" , "$OutDir/$tfile" );
+		#run \@mvcmd;
 	} else {
 		my @ffmpeg = ();
         	push ( @ffmpeg , ( '/usr/bin/ffmpeg' , '-loglevel' ,'quiet' , '-i' , "$tmpdir/$tflv" , '-v' , '0' , '-vn' , '-metadata' , 'mimeType=audio/aac' , '-acodec' , 'copy' , "$OutDir/$tfile" ));
