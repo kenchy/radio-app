@@ -33,11 +33,12 @@ my $xml = new XML::Simple;
 
 #Some Vars
 #inoticoming doesn't work with a station name that starts with a number
+#radio 4 aod doesn't work with the feeds, change it to bbc_radio_fourfm to make aod work
 my %Channel = (
 		1  => [ "bbc_radio_one"       		   , "radio1"        , "Radio1" ],
 		2  => [ "bbc_radio_two"       	       	   , "radio2"        , "Radio2" ],
 		3  => [ "bbc_radio_three"     		   , "radio3"        , "Radio3" ],
-		4  => [ "bbc_radio_fourfm"	      	   , "radio4"        , "Radio4" ],
+		4  => [ "bbc_radio_four"	      	   , "radio4"        , "Radio4" ],
 		5  => [ "bbc_radio_five_live" 		   , "fivelive"      , "R5live"  ],
 		6  => [ "bbc_6music"                       , "6music"        , "R6music" ],
 		7  => [ "bbc_7"               		   , "bbc7"          , "BBC7" ],
@@ -318,7 +319,10 @@ sub streamStation {
 		}
 		#initialise the thread variable
 		my $live_thread = 0;
-		while ( $runtot < $stop ) {
+		#while ( $runtot < $stop ) {
+		print ( "DEBUG: Time ". time(). "\n" );
+		print ( "DEBUG: finishtime " . $finishtime . "\n" );
+		while ( time() <  $finishtime ) {
 			my $padcount = sprintf("%02d", $counter);
 			my $filename = "$filetime\_$padcount\_$title.$file_suffix";
 			my $flvname = "$filetime\_$padcount\_$title.aac";
@@ -327,9 +331,9 @@ sub streamStation {
 			@flvcmd = ();
 			push ( @flvcmd , ( '/usr/bin/flvstreamer' , '-q' , '-r' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}" , '-t' , "rtmp://$attribs{ip}:$FlvPrt/$attribs{application}?_fcs_vhost=$attribs{server}&$attribs{authString}" , '--playpath' , "$attribs{identifier}?$attribs{authString}&aifp=v001" , '--live' , '--flv' , '-' , '--stop' , "$chunk" ));
 			if ((($stop - $runtot) < $chunk )&&( time() > $finishtime)) {
-				$chunk = $stop - $runtot;
-				pop ( @flvcmd );
-        			push ( @flvcmd , "$chunk"  );
+				#$chunk = $stop - $runtot;
+				#pop ( @flvcmd );
+        			#push ( @flvcmd , "$chunk"  );
 			}
 			if ( $rawlive == 0 ) {
 				pop ( @lamecmd );
