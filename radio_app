@@ -99,6 +99,7 @@ my $DrtPID = "";
 my $slide = 0;
 my @gui_res;
 my $out_suffix;
+my $getpid = 0;
 
 #These variables are pretty global??
 my (@flvcmd , @lamecmd ,@ffmpegcmd , @mp3spltcmd , @mplayercmd , @inoticmd , $PlayPath );
@@ -125,7 +126,8 @@ GetOptions (
 	'getchunk=s'	=> \@getchunk,
 	'aod'		=> \$aod,
 	'skip=i'	=> \$skip,
-	'slide'		=> \$slide
+	'slide'		=> \$slide,
+	'getpid'	=> \$getpid,
 ) or die "Incorrect usage use --help for assistance.\n";
 
 
@@ -162,7 +164,7 @@ exit;
 sub isitaPID {
 	my $testpid = shift;
 	my $pidlth  = 8;
-	my $pidsrtre  = '[pb]00';
+	my $pidsrtre  = '[pb]0';
 	if ( length($testpid) == $pidlth ) {
 		print "DEBUG:: It might be a pid it's 8 characters\n";
 		if ( $testpid =~ m/^$pidsrtre/ ) {
@@ -216,23 +218,23 @@ sub processMediaSelector {
 	my $data = $xml->XMLin(($raw->content), forcearray => [ 'media','connection' ]);
 	my $media_index = 0;
 	my $serv_index = 0;
-	#print "DEBUG:: number of medias $#{ $data->{media} } \n";
+	print "DEBUG:: number of medias $#{ $data->{media} } \n";
 	#print Dumper ( $data );
 	until ( ( $data->{media}[$media_index]->{service} eq $StrTyp[$serv_index] ) or ( defined($data->{media}[$media_index]->{service}) == 0 ) ) {
-		#print "DEBUG:: return service is $data->{media}[$media_index]->{service}\n";
-		#print "DEBUG:: match  service is $StrTyp[$serv_index]\n";
+		print "DEBUG:: return service is $data->{media}[$media_index]->{service}\n";
+		print "DEBUG:: match  service is $StrTyp[$serv_index]\n";
 		$media_index = 0;
 		#until ( ( $data->{media}[$media_index]->{service} eq $StrTyp[$serv_index] ) or ( $serv_index >= $#StrTyp ) ) {
 		until ( ( $data->{media}[$media_index]->{service} eq $StrTyp[$serv_index] ) or ( $media_index >= $#{ $data->{media} } ) ) {
                		++$media_index;
-			#print "DEBUG:: media index $media_index \n";
-			#sleep 2;
+			print "DEBUG:: media index $media_index \n";
+			sleep 2;
 		}
 		if ( $data->{media}[$media_index]->{service} ne $StrTyp[$serv_index] ) {
-			#print "DEBUG:: serv index $serv_index \n";
+			print "DEBUG:: serv index $serv_index \n";
                 	++$serv_index;
         	}
-		#sleep 2;
+		sleep 2;
 	}
 	#Right to do the lo lime light has to connections, look for the one that has protocol=rtmp
 	#print "DEBUG:: which stream $StrTyp[$serv_index] \n";
@@ -404,7 +406,7 @@ sub downloadPID {
 	my @shows  = @_;
 	#4_4_11 turned off mp3 streams, seen some evidence of the return of akamai, no longer rtmp??
 	#my @stream = ( "iplayer_uk_stream_mp3" , "iplayer_intl_stream_mp3" , "iplayer_intl_stream_mp3_lo" , "iplayer_uk_stream_aac_rtmp_lo_concrete" , "iplayer_intl_stream_aac_ws_concrete" , "iplayer_uk_stream_aac_rtmp_concrete" );
-	my @stream = ( "iplayer_intl_stream_mp3_lo" , "iplayer_uk_stream_aac_rtmp_lo_concrete" , "iplayer_intl_stream_aac_ws_concrete" , "iplayer_uk_stream_aac_rtmp_concrete" , "iplayer_intl_stream_mp3" );
+	my @stream = ( "stream-uk-audio_streaming_aac_low_uk" , "iplayer_intl_stream_mp3_lo" , "iplayer_uk_stream_aac_rtmp_lo_concrete" , "iplayer_intl_stream_aac_ws_concrete" , "iplayer_uk_stream_aac_rtmp_concrete" , "iplayer_intl_stream_mp3" );
 	#my @stream = ( "iplayer_uk_stream_aac_rtmp_concrete" );
 	#print Dumper (@shows);
 	my $show_index = 0;
@@ -571,6 +573,32 @@ sub searchShow {
 		}
 	}
 	return @SelPid;
+}
+
+sub getPID {
+	my @SelPid   = ();
+	my $AodBase  = "http://www.bbc.co.uk/iplayer/playlist/";
+	my $PID      = shift;
+	my $since    = shift;
+	my $now      = time();
+	#print "searcgh $search since $since channels";
+	#print Dumper (@channels); 
+	#isitaPID ($search);
+		# read XML file
+		my $ua = LWP::UserAgent->new;
+		my $raw = $ua->request(HTTP::Request->new( GET => $AodBase . $PID ) );
+		my $data = $xml->XMLin($raw->content, ForceArray => 'entry' );
+		
+		my $entry_index = 0;
+		#print "DEBUG: $data->{item}[0]->{identifier} \n";
+		#print "DEBUG: $data->{item}[0]->{title}[0] \n";
+		#print Dumper ($data->{item}->{title});
+		#print Dumper ($data);
+		#print "DEBUG:: $$data->{entry}[$entry_index]->{broadcast}[0]->{version_pid}\n";
+                my @TmpArray = ();
+                @TmpArray = ($data->{item}[0]->{identifier},$data->{item}[0]->{title}[0],$data->{item}[0]->{broadcast}[0],"Not Applicable",$data->{item}[0]->{duration},"Summary.....", $data->{item}[0]->{identifier});
+                push ( @SelPid, ( [@TmpArray] ) );
+	        return @SelPid;
 }
 
 sub searchFeeds {
@@ -1109,6 +1137,14 @@ if ( $Gui  == 1 ) {
 	} else {
 		print "it is not a pid";
 	}
+} elsif ( $getpid == 1 ) {
+	my @Results = ();
+	my $res;
+	my $look;
+	foreach $look (@SelSer) {
+			push ( @Results  , (getPID ( $look , $SelSin )));
+	}
+	downloadPID (@Results);
 } else {
 	my @Results = ();
 	my $res;
